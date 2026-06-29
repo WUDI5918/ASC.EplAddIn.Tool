@@ -1,0 +1,339 @@
+{
+  "MacroTypicals": [
+    {
+      "Name": "MT_",
+      "Variables": [
+        {
+          "Name": "New_Variable_1",
+          "Type": "Boolean",
+          "DisplayName": "新变量",
+          "IsMandatory": false,
+          "VisibilityFormula": "",
+          "PredefinedValues": [],
+          "Category": "",
+          "DefaultValue": ""
+        },
+        {
+          "Name": "New_Variable_2",
+          "Type": "String",
+          "DisplayName": "新变量",
+          "IsMandatory": false,
+          "VisibilityFormula": "",
+          "PredefinedValues": [],
+          "Category": "",
+          "DefaultValue": ""
+        },
+        {
+          "Name": "New_Variable_3",
+          "Type": "String",
+          "DisplayName": "新变量",
+          "IsMandatory": false,
+          "VisibilityFormula": "",
+          "PredefinedValues": [],
+          "Category": "",
+          "DefaultValue": ""
+        }
+      ],
+      "Elements": [
+        {
+          "MacroPath": "$(MD_MACROS)\\Ele_System_Config\\000_Page_Templates\\Schematic_multi-line.emp",
+          "VariantIndex": 0,
+          "IsActiveFormula": "",
+          "PositionMode": "Absolute",
+          "X": 0.0,
+          "Y": 0.0,
+          "StructureMappings": [
+            {
+              "Key": "==",
+              "Value": ""
+            },
+            {
+              "Key": "=",
+              "Value": ""
+            },
+            {
+              "Key": "+",
+              "Value": ""
+            },
+            {
+              "Key": "UserDefined",
+              "Value": ""
+            },
+            {
+              "Key": "PageName",
+              "Value": "101"
+            },
+            {
+              "Key": "==",
+              "Value": ""
+            },
+            {
+              "Key": "=",
+              "Value": ""
+            },
+            {
+              "Key": "+",
+              "Value": ""
+            },
+            {
+              "Key": "UserDefined",
+              "Value": ""
+            },
+            {
+              "Key": "PageName",
+              "Value": "101"
+            }
+          ],
+          "VariableMappings": [
+            {
+              "Key": "Page_Property : Page_description",
+              "Value": ""
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "TypicalGroups": [
+    {
+      "Name": "Main Distribution Cabinet",
+      "Variables": [
+        {
+          "Name": "Function_designation",
+          "Type": "String",
+          "DisplayName": "高层代号",
+          "IsMandatory": false,
+          "VisibilityFormula": "",
+          "PredefinedValues": [],
+          "Category": "",
+          "DefaultValue": ""
+        },
+        {
+          "Name": "Cabinet_Current",
+          "Type": "String",
+          "DisplayName": "配电柜额定电流",
+          "IsMandatory": false,
+          "VisibilityFormula": "=Use_Cabinet==true",
+          "PredefinedValues": [
+            "160A",
+            "250A",
+            "320A",
+            "630A"
+          ],
+          "Category": "",
+          "DefaultValue": ""
+        }
+      ],
+      "Instances": [
+        {
+          "TargetName": "TG_Main_Distribution_Cabinet_Macro",
+          "Type": "TypicalGroup",
+          "IsActiveFormula": "",
+          "VariableMappings": [
+            {
+              "Key": "New_Variable_8",
+              "Value": "452"
+            },
+            {
+              "Key": "New_Variable_9",
+              "Value": " "
+            },
+            {
+              "Key": "New_Variable_10",
+              "Value": ""
+            },
+            {
+              "Key": "New_Variable_11",
+              "Value": ""
+            },
+            {
+              "Key": "New_Variable_5",
+              "Value": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "TG_Main_Distribution_Cabinet_Macro",
+      "Variables": [
+        {
+          "Name": "New_Variable_8",
+          "Type": "String",
+          "DisplayName": "新变量",
+          "IsMandatory": false,
+          "VisibilityFormula": "",
+          "PredefinedValues": [],
+          "Category": "",
+          "DefaultValue": ""
+        },
+        {
+          "Name": "New_Variable_9",
+          "Type": "String",
+          "DisplayName": "新变量",
+          "IsMandatory": false,
+          "VisibilityFormula": "",
+          "PredefinedValues": [],
+          "Category": "",
+          "DefaultValue": ""
+        },
+        {
+          "Name": "New_Variable_10",
+          "Type": "String",
+          "DisplayName": "新变量",
+          "IsMandatory": false,
+          "VisibilityFormula": "",
+          "PredefinedValues": [],
+          "Category": "",
+          "DefaultValue": ""
+        },
+        {
+          "Name": "New_Variable_11",
+          "Type": "String",
+          "DisplayName": "新变量",
+          "IsMandatory": false,
+          "VisibilityFormula": "",
+          "PredefinedValues": [],
+          "Category": "",
+          "DefaultValue": ""
+        },
+        {
+          "Name": "New_Variable_5",
+          "Type": "String",
+          "DisplayName": "新变量",
+          "IsMandatory": false,
+          "VisibilityFormula": "",
+          "PredefinedValues": [],
+          "Category": "",
+          "DefaultValue": ""
+        }
+      ],
+      "Instances": [
+        {
+          "TargetName": "Main_Distribution_Cabinet_Macro",
+          "Type": "MacroTypical",
+          "IsActiveFormula": "",
+          "VariableMappings": [
+            {
+              "Key": "New_Variable_8",
+              "Value": "=New_Variable_8"
+            },
+            {
+              "Key": "New_Variable_9",
+              "Value": "=New_Variable_9"
+            },
+            {
+              "Key": "New_Variable_10",
+              "Value": "=New_Variable_10"
+            },
+            {
+              "Key": "New_Variable_11",
+              "Value": "=New_Variable_11"
+            },
+            {
+              "Key": "New_Variable_5",
+              "Value": "=New_Variable_5"
+            },
+            {
+              "Key": "New_Variable_6",
+              "Value": "=New_Variable_6"
+            },
+            {
+              "Key": "New_Variable_7",
+              "Value": "=New_Variable_7"
+            }
+          ]
+        },
+        {
+          "TargetName": "Main Distribution Cabinet",
+          "Type": "TypicalGroup",
+          "IsActiveFormula": "",
+          "VariableMappings": [
+            {
+              "Key": "Function_designation",
+              "Value": ""
+            },
+            {
+              "Key": "Cabinet_Current",
+              "Value": ""
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "Configurators": [
+    {
+      "Name": "Configurator_P8",
+      "Description": "主配电柜原理图自动配置项目",
+      "TypicalGroupRefs": [
+        "Main Distribution Cabinet",
+        "TG_Main_Distribution_Cabinet_Macro"
+      ]
+    }
+  ],
+  "Settings": {
+    "Unit": "Metric",
+    "UseSubSegmentLogic": false,
+    "SelectedLanguages": [
+      "zh-CN",
+      "en-US",
+      "zh-CN",
+      "en-US",
+      "zh-CN",
+      "en-US",
+      "zh-CN",
+      "en-US",
+      "zh-CN",
+      "en-US",
+      "zh-CN",
+      "en-US",
+      "zh-CN",
+      "en-US",
+      "zh-CN",
+      "en-US"
+    ],
+    "AvailableStructureIdentifiers": [
+      "==",
+      "=",
+      "+",
+      "UserDefined",
+      "PageName",
+      "==",
+      "=",
+      "+",
+      "UserDefined",
+      "PageName",
+      "==",
+      "=",
+      "+",
+      "UserDefined",
+      "PageName",
+      "==",
+      "=",
+      "+",
+      "UserDefined",
+      "PageName",
+      "==",
+      "=",
+      "+",
+      "UserDefined",
+      "PageName",
+      "==",
+      "=",
+      "+",
+      "UserDefined",
+      "PageName",
+      "==",
+      "=",
+      "+",
+      "UserDefined",
+      "PageName",
+      "==",
+      "=",
+      "+",
+      "UserDefined",
+      "PageName"
+    ]
+  }
+}

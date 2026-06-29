@@ -1,0 +1,166 @@
+<Window x:Class="AutoSchematicConfigurator.EplAddIn.Tool.GenerationLogWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.modernwpf.com/2019"
+        xmlns:local="clr-namespace:AutoSchematicConfigurator.EplAddIn.Tool"
+        Title="原理图生成进度与日志" Height="500" Width="700"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResize"
+        Background="{DynamicResource SystemControlPageBackgroundChromeLowBrush}" 
+        ui:WindowHelper.UseModernWindowStyle="True"
+        ui:ThemeManager.RequestedTheme="Light"
+        FontFamily="Segoe UI, Microsoft YaHei">
+    
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ui:ThemeResources />
+                <ui:XamlControlsResources />
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- Converter or Template for Log Item styling -->
+            <Style x:Key="LogItemStyle" TargetType="ListBoxItem">
+                <Setter Property="Padding" Value="8,4"/>
+                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="BorderBrush" Value="#E2E8F0"/>
+                <Setter Property="BorderThickness" Value="0,0,0,1"/>
+            </Style>
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/> <!-- Title & Progress -->
+            <RowDefinition Height="Auto"/> <!-- ProgressBar -->
+            <RowDefinition Height="Auto"/> <!-- Filters / Toolbars -->
+            <RowDefinition Height="*"/>    <!-- Log ListBox -->
+            <RowDefinition Height="Auto"/> <!-- Footer Actions -->
+        </Grid.RowDefinitions>
+
+        <!-- Title & Status Description -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,8">
+            <TextBlock Text="原理图自动生成进度" FontSize="18" FontWeight="Bold" Foreground="#1E293B"/>
+            <TextBlock x:Name="TxtSummaryStatus" Text="正在初始化生成环境..." FontSize="12" Foreground="#64748B" Margin="0,4,0,0"/>
+        </StackPanel>
+
+        <!-- Progress Bar -->
+        <ProgressBar Grid.Row="1" x:Name="GenProgressBar" Height="6" Value="0" Maximum="100" Margin="0,4,0,16" 
+                     IsIndeterminate="True" Foreground="#0078D4" Background="#E2E8F0"/>
+
+        <!-- Filters Toolbar -->
+        <Grid Grid.Row="2" Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            
+            <TextBox x:Name="TxtSearchLog" Grid.Column="0" ui:ControlHelper.PlaceholderText="搜索日志关键字..." 
+                     Height="28" Margin="0,0,8,0" TextChanged="TxtSearchLog_TextChanged"/>
+            
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <ComboBox x:Name="CboLogLevelFilter" Width="120" Height="28" SelectedIndex="0" SelectionChanged="CboLogLevelFilter_SelectionChanged">
+                    <ComboBoxItem Content="全部日志级别"/>
+                    <ComboBoxItem Content="信息 (Info)"/>
+                    <ComboBoxItem Content="成功 (Success)"/>
+                    <ComboBoxItem Content="警告 (Warning)"/>
+                    <ComboBoxItem Content="错误 (Error)"/>
+                </ComboBox>
+            </StackPanel>
+        </Grid>
+
+        <!-- Log ListBox -->
+        <ListBox Grid.Row="3" x:Name="LstLogs" BorderBrush="#CBD5E1" BorderThickness="1" Background="White"
+                 ItemContainerStyle="{StaticResource LogItemStyle}" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <Grid Margin="0,2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="65"/>  <!-- Timestamp -->
+                            <ColumnDefinition Width="Auto"/> <!-- Icon -->
+                            <ColumnDefinition Width="*"/>    <!-- Log Message -->
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Timestamp -->
+                        <TextBlock Grid.Column="0" Text="{Binding Timestamp, StringFormat=HH:mm:ss}" VerticalAlignment="Center" 
+                                   Foreground="#64748B" FontSize="11" FontFamily="Consolas"/>
+
+                        <!-- Level Icon -->
+                        <ContentControl Grid.Column="1" Margin="8,0" VerticalAlignment="Center">
+                            <ContentControl.Style>
+                                <Style TargetType="ContentControl">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Level}" Value="Info">
+                                            <Setter Property="Content">
+                                                <Setter.Value>
+                                                    <TextBlock Text="ℹ️" Foreground="#0284C7" FontWeight="Bold"/>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Level}" Value="Success">
+                                            <Setter Property="Content">
+                                                <Setter.Value>
+                                                    <TextBlock Text="✅" Foreground="#22C55E" FontWeight="Bold"/>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Level}" Value="Warning">
+                                            <Setter Property="Content">
+                                                <Setter.Value>
+                                                    <TextBlock Text="⚠️" Foreground="#EAB308" FontWeight="Bold"/>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Level}" Value="Error">
+                                            <Setter Property="Content">
+                                                <Setter.Value>
+                                                    <TextBlock Text="❌" Foreground="#EF4444" FontWeight="Bold"/>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ContentControl.Style>
+                        </ContentControl>
+
+                        <!-- Message -->
+                        <TextBlock Grid.Column="2" Text="{Binding Message}" TextWrapping="Wrap" VerticalAlignment="Center" 
+                                   FontSize="12" FontFamily="Segoe UI, Microsoft YaHei">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Level}" Value="Error">
+                                            <Setter Property="Foreground" Value="#DC2626"/>
+                                            <Setter Property="FontWeight" Value="SemiBold"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Level}" Value="Warning">
+                                            <Setter Property="Foreground" Value="#D97706"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Level}" Value="Success">
+                                            <Setter Property="Foreground" Value="#15803D"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Level}" Value="Info">
+                                            <Setter Property="Foreground" Value="#0F172A"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <!-- Footer Actions -->
+        <Grid Grid.Row="4" Margin="0,16,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            
+            <Button Grid.Column="0" Content="📋 复制全部日志" Height="30" Width="130" Click="BtnCopyLogs_Click" Style="{StaticResource DefaultButtonStyle}"/>
+            <Button Grid.Column="2" x:Name="BtnClose" Content="关闭 (Close)" Height="30" Width="100" Click="BtnClose_Click" IsEnabled="False" Style="{StaticResource AccentButtonStyle}"/>
+        </Grid>
+    </Grid>
+</Window>
