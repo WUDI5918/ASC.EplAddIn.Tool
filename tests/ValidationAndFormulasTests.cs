@@ -290,5 +290,31 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool.Tests
             var result = ConfiguratorService.EvaluateActiveFormula("invalid syntax (((", parameters);
             Assert.False(result);
         }
+
+        [Fact]
+        public void EvaluateExpression_WithAndOrNotInsideStringLiterals_ShouldNotRewriteThem()
+        {
+            var parameters = new Dictionary<string, object>();
+
+            Assert.Equal("Start and Stop", ConfiguratorService.EvaluateExpression("Concat('Start and Stop')", parameters)?.ToString());
+            Assert.Equal("black or white", ConfiguratorService.EvaluateExpression("Concat('black or white')", parameters)?.ToString());
+            Assert.Equal("do not", ConfiguratorService.EvaluateExpression("Concat('do not')", parameters)?.ToString());
+            Assert.Equal("A and B", ConfiguratorService.EvaluateExpression("Concat(\"A and B\")", parameters)?.ToString());
+        }
+
+        [Fact]
+        public void EvaluateExpression_WithNCalcWordsOutsideStrings_ShouldStillConvert()
+        {
+            var parameters = new Dictionary<string, object>
+            {
+                { "A", true },
+                { "B", false }
+            };
+
+            Assert.False((bool)ConfiguratorService.EvaluateExpression("A and B", parameters));
+            Assert.True((bool)ConfiguratorService.EvaluateExpression("A or B", parameters));
+            Assert.True((bool)ConfiguratorService.EvaluateExpression("not A == false", parameters));
+            Assert.Equal("android", ConfiguratorService.EvaluateExpression("Concat('android')", parameters)?.ToString());
+        }
     }
 }

@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text.RegularExpressions;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -20,15 +20,74 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
 
         /// <summary>
         /// Preprocess NCalc-style logical operators (and/or/not) to JavaScript equivalents (&&/||/!).
-        /// Uses word-boundary regex to avoid replacing inside string literals.
+        /// String literals (single- or double-quoted) are copied verbatim so words inside
+        /// text values are never rewritten.
         /// </summary>
         internal static string PreprocessNCalcSyntax(string expression)
         {
-            // Replace NCalc logical operators with JS equivalents (case-insensitive, word boundaries)
-            expression = Regex.Replace(expression, @"\band\b", "&&", RegexOptions.IgnoreCase);
-            expression = Regex.Replace(expression, @"\bor\b", "||", RegexOptions.IgnoreCase);
-            expression = Regex.Replace(expression, @"\bnot\b", "!", RegexOptions.IgnoreCase);
-            return expression;
+            if (string.IsNullOrEmpty(expression)) return expression;
+
+            var sb = new StringBuilder(expression.Length);
+            char quote = '\0';
+            int i = 0;
+
+            while (i < expression.Length)
+            {
+                char c = expression[i];
+
+                // Inside a string literal: copy verbatim, honoring backslash escapes.
+                if (quote != '\0')
+                {
+                    sb.Append(c);
+                    if (c == '\\' && i + 1 < expression.Length)
+                    {
+                        sb.Append(expression[i + 1]);
+                        i += 2;
+                        continue;
+                    }
+                    if (c == quote) quote = '\0';
+                    i++;
+                    continue;
+                }
+
+                if (c == '\'' || c == '"')
+                {
+                    quote = c;
+                    sb.Append(c);
+                    i++;
+                    continue;
+                }
+
+                if (char.IsLetter(c))
+                {
+                    int start = i;
+                    while (i < expression.Length && IsWordChar(expression[i])) i++;
+
+                    string word = expression.Substring(start, i - start);
+                    bool boundaryBefore = start == 0 || !IsWordChar(expression[start - 1]);
+                    bool boundaryAfter = i >= expression.Length || !IsWordChar(expression[i]);
+
+                    if (boundaryBefore && boundaryAfter)
+                    {
+                        if (word.Equals("and", StringComparison.OrdinalIgnoreCase)) word = "&&";
+                        else if (word.Equals("or", StringComparison.OrdinalIgnoreCase)) word = "||";
+                        else if (word.Equals("not", StringComparison.OrdinalIgnoreCase)) word = "!";
+                    }
+
+                    sb.Append(word);
+                    continue;
+                }
+
+                sb.Append(c);
+                i++;
+            }
+
+            return sb.ToString();
+        }
+
+        private static bool IsWordChar(char c)
+        {
+            return char.IsLetterOrDigit(c) || c == '_';
         }
 
         private static void RegisterMathFunctions(Jint.Engine engine)
