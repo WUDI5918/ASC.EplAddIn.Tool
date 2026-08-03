@@ -171,6 +171,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
             Page lastEmpPage = null;
 
             ClearedPages.Clear();
+            _pageBoundingBoxes.Clear();
 
             var initialPages = new HashSet<string>(activeProject.Pages.Select(p => p.Name));
 
