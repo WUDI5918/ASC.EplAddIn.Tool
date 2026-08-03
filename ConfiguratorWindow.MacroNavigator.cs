@@ -730,6 +730,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                 if (element != null)
                 {
                     element.VariableMappings.Add(new MappingEntry("新占位符", ""));
+                    MarkDirty();
                     if (_selectedItem is MacroTypical typical)
                     {
                         BindElementsList(typical.Elements);
@@ -742,27 +743,35 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
         {
             var btn = sender as Button;
             if (btn == null) return;
-            
+
             var mapping = btn.DataContext as MappingEntry;
             if (mapping == null) return;
 
-            if (_selectedItem is MacroTypical typical)
+            if (!(_selectedItem is MacroTypical typical)) return;
+
+            // The mapping key may be "PhName=VarName", "PhName : VarName", or just "VarName".
+            string varName = mapping.Key ?? "";
+            int sep = varName.LastIndexOfAny(new[] { '=', ':' });
+            if (sep >= 0 && sep < varName.Length - 1)
             {
-                var existingVar = typical.Variables.FirstOrDefault(v => v.Name == mapping.Key);
-                if (existingVar == null)
-                {
-                    typical.Variables.Add(new ConfigurationVariable
-                    {
-                        Name = mapping.Key,
-                        Type = "String",
-                        DisplayName = mapping.Key
-                    });
-                    
-                    BindVariablesList(typical.Variables);
-                }
-                
-                mapping.Value = mapping.Key;
+                varName = varName.Substring(sep + 1).Trim();
             }
+            if (string.IsNullOrWhiteSpace(varName)) return;
+
+            var existingVar = typical.Variables.FirstOrDefault(v => string.Equals(v.Name, varName, StringComparison.OrdinalIgnoreCase));
+            if (existingVar == null)
+            {
+                typical.Variables.Add(new ConfigurationVariable
+                {
+                    Name = varName,
+                    Type = "String",
+                    DisplayName = varName
+                });
+            }
+
+            mapping.Value = "=" + varName;
+            BindVariablesList(typical.Variables);
+            MarkDirty();
         }
 
         private void BtnDeleteVarMapping_Click(object sender, RoutedEventArgs e)
@@ -785,6 +794,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                 if (element != null)
                 {
                     element.VariableMappings.Remove(entry);
+                    MarkDirty();
                     if (_selectedItem is MacroTypical typical)
                     {
                         BindElementsList(typical.Elements);

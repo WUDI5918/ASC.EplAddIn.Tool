@@ -256,6 +256,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
 
             InvalidateTypicalTargetsCache();
             RefreshSidebar();
+            MarkDirty();
         }
 
         private void BtnCopySidebarItem_Click(object sender, RoutedEventArgs e)
