@@ -203,6 +203,38 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
             }
         }
 
+        public static bool HasTypicalGroupCycle(TypicalGroup startGroup, ConfiguratorData db)
+        {
+            if (startGroup == null || db?.TypicalGroups == null) return false;
+
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var stack = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            return HasTypicalGroupCycleCore(startGroup, db, visited, stack);
+        }
+
+        private static bool HasTypicalGroupCycleCore(TypicalGroup group, ConfiguratorData db, HashSet<string> visited, HashSet<string> stack)
+        {
+            if (group == null) return false;
+            if (!visited.Add(group.Name)) return false;
+            stack.Add(group.Name);
+
+            if (group.Instances != null)
+            {
+                foreach (var instance in group.Instances)
+                {
+                    if (!instance.Type.Equals("TypicalGroup", StringComparison.OrdinalIgnoreCase)) continue;
+
+                    var child = db.TypicalGroups.FirstOrDefault(g => string.Equals(g.Name, instance.TargetName, StringComparison.OrdinalIgnoreCase));
+                    if (child == null) continue;
+                    if (stack.Contains(child.Name)) return true;
+                    if (HasTypicalGroupCycleCore(child, db, visited, stack)) return true;
+                }
+            }
+
+            stack.Remove(group.Name);
+            return false;
+        }
+
         public static void GenerateTypicalGroup(
             TypicalGroup group,
             ConfiguratorData db,
@@ -213,6 +245,12 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
             ref int placeholderUpdates,
             ref Page lastEmpPage)
         {
+            if (HasTypicalGroupCycle(group, db))
+            {
+                Log("Error", $"检测到典型组循环引用: '{group.Name}' 直接或间接引用了自身，已终止生成。");
+                throw new InvalidOperationException($"检测到典型组循环引用: '{group.Name}' 直接或间接引用了自身，已终止生成。");
+            }
+
             if (group.Instances == null) return;
 
             // R4: Validate top-level group's own variables
