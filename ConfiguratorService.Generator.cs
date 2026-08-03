@@ -484,23 +484,23 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                                 // Delete existing page in target project to prevent overwrite collisions
                                 string fullTargetPageName = FormatPageName(functionalAssignment, functionDesignation, locationDesignation, documentType, userDefined, targetPageName);
 
-                                if (!ClearedPages.Contains(fullTargetPageName))
+                                // Always remove a pre-existing page with this name so the
+                                // page macro owns its pages; placeholders below must target
+                                // the freshly inserted pages, not an earlier macro's pages.
+                                Page existingTarget = activeProject.Pages.FirstOrDefault(pageObj => pageObj.Name.Equals(fullTargetPageName, StringComparison.OrdinalIgnoreCase));
+                                if (existingTarget != null)
                                 {
-                                    Page existingTarget = activeProject.Pages.FirstOrDefault(pageObj => pageObj.Name.Equals(fullTargetPageName, StringComparison.OrdinalIgnoreCase));
-                                    if (existingTarget != null)
+                                    Log("Info", $"  检测到目标页面已存在 '{fullTargetPageName}'，正在清理以重新生成...");
+                                    try
                                     {
-                                        Log("Info", $"  检测到目标页面已存在 '{fullTargetPageName}'，正在清理以重新生成...");
-                                        try
-                                        {
-                                            existingTarget.Remove();
-                                        }
-                                        catch (Exception remEx)
-                                        {
-                                            Log("Warning", $"  清理页面 '{fullTargetPageName}' 失败: {remEx.Message}");
-                                        }
+                                        existingTarget.Remove();
                                     }
-                                    ClearedPages.Add(fullTargetPageName);
+                                    catch (Exception remEx)
+                                    {
+                                        Log("Warning", $"  清理页面 '{fullTargetPageName}' 失败: {remEx.Message}");
+                                    }
                                 }
+                                ClearedPages.Add(fullTargetPageName);
 
                                 try
                                 {
