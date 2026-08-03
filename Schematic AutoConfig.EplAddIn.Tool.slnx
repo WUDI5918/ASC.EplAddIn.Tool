@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Schematic AutoConfig.EplAddIn.Tool.csproj" Id="724b019d-c42f-462d-8ef2-7e2bffa6af0b" />
+  <Project Path="tests\AutoSchematicConfigurator.EplAddIn.Tool.Tests.csproj" />
+</Solution>

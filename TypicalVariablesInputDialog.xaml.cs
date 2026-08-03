@@ -10,7 +10,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
     {
         private List<ConfigurationVariable> _variables;
         private Dictionary<string, FrameworkElement> _controlMap = new Dictionary<string, FrameworkElement>();
-        
+
         public Dictionary<string, string> VariableValues { get; private set; } = new Dictionary<string, string>();
 
         public TypicalVariablesInputDialog(List<ConfigurationVariable> variables, string typicalName)
@@ -91,7 +91,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                         {
                             cbo.Items.Add(opt);
                         }
-                        
+
                         int defIdx = variable.PredefinedValues.IndexOf(defaultVal);
                         cbo.SelectedIndex = defIdx != -1 ? defIdx : 0;
                         inputCtrl = cbo;

@@ -4,3 +4,4 @@ obj/
 debug_log.txt
 *.user
 *.suo
+.superpowers/

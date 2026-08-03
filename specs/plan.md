@@ -58,13 +58,53 @@ We will refine:
 - Placeholder updates: Using `PlaceHolder.SetValue(varName, value)` and `PlaceHolder.SelectValueSet(setName)`, then calling `PlaceHolder.Apply()` to ensure graphic updates.
 - Security and transaction control using EPLAN's `TransactionManager` and `LockingStep` to roll back changes upon error.
 
+### 4.1 EPLAN Document Type (&) Implementation
+- Map UI mapping key `UserDefined` or `&` in the `StructureMappings` to EPLAN page property `DESIGNATION_DOCTYPE`.
+- In `GetOrCreatePage` and `GenerateTypicalInternal`, concatenate Document Type to page path using `&` (e.g. `==ESS=L1+P1&EBH/101`).
+
+### 4.2 Window Macro Placeholder Isolation Implementation
+- For Window Macros, obtain the array of placed objects `StorableObject[] insertedObjects` returned by `Insert.WindowMacro`.
+- Filter placeholders using `insertedObjects.OfType<PlaceHolder>()` to only process placeholders belonging to the newly placed macro, leaving other macro placeholders on the same page unaffected.
+
+### 4.3 Custom Formula Helper Registration
+- Register the following additional functions in `EvaluateExpression`:
+  - `IsAvailable(var)`: Returns whether parameter exists and is not null.
+  - `If(cond, t, f)`: Inline ternary.
+  - `IsNullEmpty(str)`: String null/empty check.
+  - `Contains(str, sub)`: String contains check.
+  - `StartsWith(str, sub)`: String starts with check.
+  - `EndsWith(str, sub)`: String ends with check.
+
+### 4.4 Culture-Aware Type Conversion & Default Fallbacks
+- Create a private `ConvertToVariableType(object value, string targetType)` helper in `ConfiguratorService.Generator.cs`. Use it for converting evaluated variable values safely.
+- If a child typical variable has no mapping in the parent typical group instance, retrieve the default value using `variable.DefaultValue` as evaluated input.
+
+### 4.5 Window Macro RepresentationType & MoveKind Selection
+- In `GenerateTypicalInternal`, cast `element.RepresentationType` to `WindowMacro.Enums.RepresentationType` and supply it to the `Insert.WindowMacro` overload.
+- Inspect `element.PositionMode`. If equal to `"Absolute"`, set the placement move kind parameter to `Insert.MoveKind.Absolute` instead of `Relative`.
+
+### 4.6 direct Placeholder Variable Name Matching
+- In the placeholder variable application logic, support matches against the bare variable name: `m.Key.Equals(varName, StringComparison.OrdinalIgnoreCase)`.
+
+### 4.7 Mandatory Variable Validation
+- Validate mandatory typical/group parameters at generation-time. Throw an descriptive `ArgumentException` if a visible mandatory variable resolves to null or whitespace.
+### 4.8 DataGrid Layout Stabilization
+- Add `HorizontalScrollBarVisibility="Disabled"` to the `ItrElements` DataGrid in `ConfiguratorWindow.xaml` to resolve the layout measurement jitter caused by dynamic scrollbar toggling during splitter drag-resize.
+
+### 4.9 Drag-Drop Null-Safety
+- Add `if (_dragFloatingCard == null)` checks early in `General_PreviewMouseLeftButtonUp` to prevent `ArgumentNullException` crashes when retrieving coordinates/initiating snap animations on non-existent floating card instances.
+
 ---
 
 ## 5. Verification Plan
 
 ### Automated Tests
-- Run `dotnet build` to ensure the project builds successfully with NuGet packages restored.
+- Run `dotnet build` or `msbuild` to ensure clean compilation.
 
 ### Manual Verification
-- Verify the WPF UI loads.
-- Test the expression engine with boolean, ternary, string concat, and lookup expressions.
+- Verify that a configuration with document type `&` generates pages correctly in EPLAN.
+- Verify that placing multiple window macros on the same page applies variables independently without collision.
+- Verify custom NCalc functions work via conditional checks.
+- Verify that absolute placement positions macros at the correct coordinates.
+- Verify that missing variable mappings fall back correctly to the variable's default value.
+- Verify that unpopulated mandatory variables trigger an error rather than generating corrupt drawings.

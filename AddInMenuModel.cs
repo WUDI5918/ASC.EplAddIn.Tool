@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Windows.Forms;
 using System.Xml.Linq;
 using OfficeOpenXml;
+using Newtonsoft.Json.Linq;
 using Eplan.EplApi.ApplicationFramework;
 using Eplan.EplApi.Gui;
 using Eplan.EplApi.DataModel;
@@ -76,7 +77,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
         private void RegisterRibbon()
         {
             RibbonBar ribbonBar = new RibbonBar();
-            
+
             // Check if tab already exists, if not add it
             RibbonTab customTab = ribbonBar.Tabs.FirstOrDefault(t => t.Name == MenuText);
             if (customTab == null)
@@ -133,27 +134,40 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
         {
             try
             {
-                if (_activeWindow != null && _activeWindow.IsLoaded)
+                // Capture data from existing window before closing (data migration).
+                ConfiguratorData savedDb = null;
+                bool savedIsDirty = false;
+                if (_activeWindow != null)
                 {
-                    _activeWindow.Activate();
-                    if (_activeWindow.WindowState == System.Windows.WindowState.Minimized)
+                    try
                     {
-                        _activeWindow.WindowState = System.Windows.WindowState.Normal;
+                        savedDb = _activeWindow.Database;
+                        savedIsDirty = _activeWindow.HasUnsavedChanges;
                     }
-                    return true;
+                    catch { }
+
+                    try
+                    {
+                        _activeWindow.Close();
+                    }
+                    catch { }
+                    _activeWindow = null;
                 }
 
                 _activeWindow = new ConfiguratorWindow();
-                
+
+                // Restore data from previous window instance
+                if (savedDb != null)
+                {
+                    _activeWindow.InjectDatabase(savedDb, savedIsDirty);
+                }
+
                 // Set owner to EPLAN main window to maintain proper window hierarchy
                 System.Windows.Interop.WindowInteropHelper helper = new System.Windows.Interop.WindowInteropHelper(_activeWindow);
                 helper.Owner = System.Diagnostics.Process.GetCurrentProcess().MainWindowHandle;
-                
-                _activeWindow.Closed += (sender, args) => {
-                    _activeWindow = null;
-                };
 
                 _activeWindow.Show();
+                _activeWindow.Activate();
             }
             catch (Exception ex)
             {
@@ -184,36 +198,73 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
             try
             {
                 ConfiguratorService.LogDebug("--- ExecuteCogineerProjectBuilderAction Invoked ---");
-                
+
                 string token = "";
                 oActionCallingContext.GetParameter("token", ref token);
-                
+
                 string libraryName = "";
                 oActionCallingContext.GetParameter("libraryName", ref libraryName);
-                
+
                 string configuratorName = "";
                 oActionCallingContext.GetParameter("configuratorName", ref configuratorName);
-                
+
                 string storagelocation = "";
                 oActionCallingContext.GetParameter("storagelocation", ref storagelocation);
-                
+
                 string targetProjectName = "";
                 oActionCallingContext.GetParameter("targetProjectName", ref targetProjectName);
-                
+
                 string template = "";
                 oActionCallingContext.GetParameter("template", ref template);
-                
+
                 string xmlfile = "";
                 oActionCallingContext.GetParameter("xmlfile", ref xmlfile);
-                
+
                 string importfile = "";
                 oActionCallingContext.GetParameter("importfile", ref importfile);
-                
+
                 string overwriteStr = "";
                 oActionCallingContext.GetParameter("overwrite", ref overwriteStr);
                 bool overwrite = (overwriteStr == "1");
 
-                ConfiguratorService.LogDebug($"Params: libraryName='{libraryName}', configuratorName='{configuratorName}', targetProjectName='{targetProjectName}', xmlfile='{xmlfile}', importfile='{importfile}'");
+                // C2: JSON parameter file support
+                string jsonfile = "";
+                oActionCallingContext.GetParameter("jsonfile", ref jsonfile);
+
+                // C4: dryrun validation mode
+                string dryrunStr = "";
+                oActionCallingContext.GetParameter("dryrun", ref dryrunStr);
+                bool dryrun = (dryrunStr == "1");
+
+                ConfiguratorService.LogDebug($"Params: libraryName='{libraryName}', configuratorName='{configuratorName}', targetProjectName='{targetProjectName}', xmlfile='{xmlfile}', importfile='{importfile}', jsonfile='{jsonfile}', dryrun='{dryrunStr}'");
+
+                // C2: Load parameters from JSON file if specified
+                JObject jsonParams = null;
+                if (!string.IsNullOrEmpty(jsonfile) && File.Exists(jsonfile))
+                {
+                    ConfiguratorService.LogDebug($"Loading parameters from JSON file: {jsonfile}");
+                    string jsonContent = File.ReadAllText(jsonfile);
+                    jsonParams = JObject.Parse(jsonContent);
+
+                    // Override parameters from JSON if present
+                    if (jsonParams["ConfiguratorName"] != null && string.IsNullOrEmpty(configuratorName))
+                        configuratorName = jsonParams["ConfiguratorName"].ToString();
+                    if (jsonParams["TemplatePath"] != null && string.IsNullOrEmpty(template))
+                        template = jsonParams["TemplatePath"].ToString();
+                    if (jsonParams["TargetPath"] != null && string.IsNullOrEmpty(targetProjectName))
+                        targetProjectName = jsonParams["TargetPath"].ToString();
+                    if (jsonParams["LibraryName"] != null && string.IsNullOrEmpty(libraryName))
+                        libraryName = jsonParams["LibraryName"].ToString();
+                    if (jsonParams["StorageLocation"] != null && string.IsNullOrEmpty(storagelocation))
+                        storagelocation = jsonParams["StorageLocation"].ToString();
+
+                    ConfiguratorService.LogDebug($"JSON params loaded: configuratorName='{configuratorName}', template='{template}', targetProjectName='{targetProjectName}'");
+                }
+                else if (!string.IsNullOrEmpty(jsonfile))
+                {
+                    ConfiguratorService.LogDebug($"Error: JSON parameter file not found: '{jsonfile}'");
+                    return false;
+                }
 
                 if (string.IsNullOrEmpty(libraryName) || string.IsNullOrEmpty(configuratorName))
                 {
@@ -221,8 +272,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                     return false;
                 }
 
-                // 1. Load Database
-                string dbPath = Path.Combine(@"c:\Users\62789\source\repos\ASC.EplAddIn.Tool", "configurator_data.json");
+                string dbPath = ConfiguratorService.GetDatabasePath();
                 if (!File.Exists(dbPath))
                 {
                     ConfiguratorService.LogDebug($"Error: Library file not found at '{dbPath}'");
@@ -243,6 +293,112 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                 {
                     ConfiguratorService.LogDebug($"Error: Configurator '{configuratorName}' not found in library.");
                     return false;
+                }
+
+                // 3. Import parameter values
+                string paramFile = !string.IsNullOrEmpty(xmlfile) ? xmlfile : importfile;
+                var importedValues = new Dictionary<string, string>();
+                if (!string.IsNullOrEmpty(paramFile) && File.Exists(paramFile))
+                {
+                    if (paramFile.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
+                    {
+                        importedValues = ImportXml(paramFile);
+                    }
+                    else if (paramFile.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+                    {
+                        importedValues = ImportXlsx(paramFile);
+                    }
+                }
+
+                // Map imported values to group parameters
+                var groupParameters = new Dictionary<string, Dictionary<string, object>>();
+                if (configurator.TypicalGroupRefs != null)
+                {
+                    foreach (string groupRef in configurator.TypicalGroupRefs)
+                    {
+                        var group = db.TypicalGroups.FirstOrDefault(g => string.Equals(g.Name, groupRef, StringComparison.OrdinalIgnoreCase));
+                        if (group == null) continue;
+
+                        var parameters = new Dictionary<string, object>();
+                        foreach (var variable in group.Variables)
+                        {
+                            object val = null;
+
+                            // Priority 1: JSON file Parameters section
+                            if (jsonParams != null && jsonParams["Parameters"] != null)
+                            {
+                                var jsonGroupParams = jsonParams["Parameters"] as JObject;
+                                if (jsonGroupParams != null)
+                                {
+                                    var jsonGroup = jsonGroupParams[group.Name] as JObject;
+                                    if (jsonGroup != null && jsonGroup[variable.Name] != null)
+                                    {
+                                        val = ConvertValueType(jsonGroup[variable.Name].ToString(), variable.Type);
+                                    }
+                                }
+                            }
+
+                            // Priority 2: imported file values
+                            if (val == null)
+                            {
+                                if (importedValues.TryGetValue($"{group.Name}.{variable.Name}", out string v1))
+                                {
+                                    val = ConvertValueType(v1, variable.Type);
+                                }
+                                else if (importedValues.TryGetValue(variable.Name, out string v2))
+                                {
+                                    val = ConvertValueType(v2, variable.Type);
+                                }
+                                else
+                                {
+                                    val = ConvertValueType(variable.DefaultValue, variable.Type);
+                                }
+                            }
+                            parameters[variable.Name] = val;
+                        }
+                        groupParameters[group.Name] = parameters;
+                    }
+                }
+
+                // C4: dryrun mode — validate only, no generation
+                if (dryrun)
+                {
+                    ConfiguratorService.LogDebug("Dryrun mode: validating parameters...");
+                    ConfiguratorService.Log("Info", $"[DryRun] 开始验证配置器 '{configuratorName}' 的参数...");
+
+                    try
+                    {
+                        if (configurator.TypicalGroupRefs != null)
+                        {
+                            foreach (string groupRef in configurator.TypicalGroupRefs)
+                            {
+                                var group = db.TypicalGroups.FirstOrDefault(g => string.Equals(g.Name, groupRef, StringComparison.OrdinalIgnoreCase));
+                                if (group == null) continue;
+
+                                Dictionary<string, object> groupParams = null;
+                                groupParameters.TryGetValue(group.Name, out groupParams);
+
+                                ConfiguratorService.ValidateVariables(group.Name, group.Variables, groupParams ?? new Dictionary<string, object>());
+                                ConfiguratorService.Log("Info", $"[DryRun] 组 '{group.Name}' 参数验证通过。");
+                            }
+                        }
+
+                        ConfiguratorService.Log("Success", $"[DryRun] 配置器 '{configuratorName}' 所有参数验证通过！");
+                        ConfiguratorService.LogDebug("Dryrun validation completed successfully.");
+
+                        // C3: Write generation logs to file in silent mode
+                        ConfiguratorService.WriteGenerationLogToFile();
+                        return true;
+                    }
+                    catch (Exception valEx)
+                    {
+                        ConfiguratorService.Log("Error", $"[DryRun] 参数验证失败: {valEx.Message}");
+                        ConfiguratorService.LogDebug($"Dryrun validation failed: {valEx.Message}");
+
+                        // C3: Write generation logs to file in silent mode
+                        ConfiguratorService.WriteGenerationLogToFile();
+                        return false;
+                    }
                 }
 
                 // 2. Open or Create target project
@@ -319,52 +475,6 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                     return false;
                 }
 
-                // 3. Import parameter values
-                string paramFile = !string.IsNullOrEmpty(xmlfile) ? xmlfile : importfile;
-                var importedValues = new Dictionary<string, string>();
-                if (!string.IsNullOrEmpty(paramFile) && File.Exists(paramFile))
-                {
-                    if (paramFile.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
-                    {
-                        importedValues = ImportXml(paramFile);
-                    }
-                    else if (paramFile.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
-                    {
-                        importedValues = ImportXlsx(paramFile);
-                    }
-                }
-
-                // Map imported values to group parameters
-                var groupParameters = new Dictionary<string, Dictionary<string, object>>();
-                if (configurator.TypicalGroupRefs != null)
-                {
-                    foreach (string groupRef in configurator.TypicalGroupRefs)
-                    {
-                        var group = db.TypicalGroups.FirstOrDefault(g => string.Equals(g.Name, groupRef, StringComparison.OrdinalIgnoreCase));
-                        if (group == null) continue;
-
-                        var parameters = new Dictionary<string, object>();
-                        foreach (var variable in group.Variables)
-                        {
-                            object val = null;
-                            if (importedValues.TryGetValue($"{group.Name}.{variable.Name}", out string v1))
-                            {
-                                val = ConvertValueType(v1, variable.Type);
-                            }
-                            else if (importedValues.TryGetValue(variable.Name, out string v2))
-                            {
-                                val = ConvertValueType(v2, variable.Type);
-                            }
-                            else
-                            {
-                                val = ConvertValueType(variable.DefaultValue, variable.Type);
-                            }
-                            parameters[variable.Name] = val;
-                        }
-                        groupParameters[group.Name] = parameters;
-                    }
-                }
-
                 // 4. Execute generation in safe transaction
                 Page activePage = (project.Pages != null && project.Pages.Length > 0) ? project.Pages[0] : null;
                 if (activePage == null)
@@ -379,11 +489,16 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                 string result = ConfiguratorService.GenerateConfigurator(configurator, db, groupParameters);
                 ConfiguratorService.LogDebug($"Generation finished: {result}");
 
+                // C3: Write generation logs to file in silent mode (no MessageBox or GenerationLogWindow)
+                ConfiguratorService.WriteGenerationLogToFile();
+
                 return true;
             }
             catch (Exception ex)
             {
                 ConfiguratorService.LogDebug($"Exception in ExecuteCogineerProjectBuilderAction: {ex.Message}\n{ex.StackTrace}");
+                // C3: Write logs even on failure
+                ConfiguratorService.WriteGenerationLogToFile();
                 return false;
             }
         }

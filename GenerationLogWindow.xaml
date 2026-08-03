@@ -5,16 +5,18 @@
         xmlns:local="clr-namespace:AutoSchematicConfigurator.EplAddIn.Tool"
         Title="原理图生成进度与日志" Height="500" Width="700"
         WindowStartupLocation="CenterOwner" ResizeMode="CanResize"
-        Background="{DynamicResource SystemControlPageBackgroundChromeLowBrush}" 
+        Background="{StaticResource WorkspaceBg}" 
+        Foreground="White"
         ui:WindowHelper.UseModernWindowStyle="True"
-        ui:ThemeManager.RequestedTheme="Light"
+        ui:ThemeManager.RequestedTheme="Dark"
         FontFamily="Segoe UI, Microsoft YaHei">
     
     <Window.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ui:ThemeResources />
+                <ui:ThemeResources RequestedTheme="Dark" />
                 <ui:XamlControlsResources />
+                <ResourceDictionary Source="Theme.xaml" />
             </ResourceDictionary.MergedDictionaries>
 
             <!-- Converter or Template for Log Item styling -->
@@ -22,7 +24,7 @@
                 <Setter Property="Padding" Value="8,4"/>
                 <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                 <Setter Property="Background" Value="Transparent"/>
-                <Setter Property="BorderBrush" Value="#E2E8F0"/>
+                <Setter Property="BorderBrush" Value="{StaticResource BorderDark}"/>
                 <Setter Property="BorderThickness" Value="0,0,0,1"/>
             </Style>
         </ResourceDictionary>
@@ -39,13 +41,13 @@
 
         <!-- Title & Status Description -->
         <StackPanel Grid.Row="0" Margin="0,0,0,8">
-            <TextBlock Text="原理图自动生成进度" FontSize="18" FontWeight="Bold" Foreground="#1E293B"/>
-            <TextBlock x:Name="TxtSummaryStatus" Text="正在初始化生成环境..." FontSize="12" Foreground="#64748B" Margin="0,4,0,0"/>
+            <TextBlock Text="原理图自动生成进度" FontSize="18" FontWeight="Bold" Foreground="White"/>
+            <TextBlock x:Name="TxtSummaryStatus" Text="正在初始化生成环境..." FontSize="12" Foreground="{StaticResource TextMuted}" Margin="0,4,0,0"/>
         </StackPanel>
 
         <!-- Progress Bar -->
         <ProgressBar Grid.Row="1" x:Name="GenProgressBar" Height="6" Value="0" Maximum="100" Margin="0,4,0,16" 
-                     IsIndeterminate="True" Foreground="#0078D4" Background="#E2E8F0"/>
+                     IsIndeterminate="True" Foreground="{StaticResource AccentBlue}" Background="{StaticResource BorderDark}"/>
 
         <!-- Filters Toolbar -->
         <Grid Grid.Row="2" Margin="0,0,0,10">
@@ -55,10 +57,10 @@
             </Grid.ColumnDefinitions>
             
             <TextBox x:Name="TxtSearchLog" Grid.Column="0" ui:ControlHelper.PlaceholderText="搜索日志关键字..." 
-                     Height="28" Margin="0,0,8,0" TextChanged="TxtSearchLog_TextChanged"/>
+                     Height="28" Margin="0,0,8,0" TextChanged="TxtSearchLog_TextChanged" Background="{StaticResource ListPaneBg}" Foreground="White" BorderBrush="{StaticResource BorderDark}"/>
             
             <StackPanel Grid.Column="1" Orientation="Horizontal">
-                <ComboBox x:Name="CboLogLevelFilter" Width="120" Height="28" SelectedIndex="0" SelectionChanged="CboLogLevelFilter_SelectionChanged">
+                <ComboBox x:Name="CboLogLevelFilter" Width="120" Height="28" SelectedIndex="0" SelectionChanged="CboLogLevelFilter_SelectionChanged" Background="{StaticResource ListPaneBg}" Foreground="White" BorderBrush="{StaticResource BorderDark}">
                     <ComboBoxItem Content="全部日志级别"/>
                     <ComboBoxItem Content="信息 (Info)"/>
                     <ComboBoxItem Content="成功 (Success)"/>
@@ -69,7 +71,7 @@
         </Grid>
 
         <!-- Log ListBox -->
-        <ListBox Grid.Row="3" x:Name="LstLogs" BorderBrush="#CBD5E1" BorderThickness="1" Background="White"
+        <ListBox Grid.Row="3" x:Name="LstLogs" BorderBrush="{StaticResource BorderDark}" BorderThickness="1" Background="{StaticResource ListPaneBg}"
                  ItemContainerStyle="{StaticResource LogItemStyle}" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                  ScrollViewer.VerticalScrollBarVisibility="Auto">
             <ListBox.ItemTemplate>
@@ -83,7 +85,7 @@
 
                         <!-- Timestamp -->
                         <TextBlock Grid.Column="0" Text="{Binding Timestamp, StringFormat=HH:mm:ss}" VerticalAlignment="Center" 
-                                   Foreground="#64748B" FontSize="11" FontFamily="Consolas"/>
+                                   Foreground="{StaticResource TextMuted}" FontSize="11" FontFamily="Consolas"/>
 
                         <!-- Level Icon -->
                         <ContentControl Grid.Column="1" Margin="8,0" VerticalAlignment="Center">
@@ -93,28 +95,28 @@
                                         <DataTrigger Binding="{Binding Level}" Value="Info">
                                             <Setter Property="Content">
                                                 <Setter.Value>
-                                                    <TextBlock Text="ℹ️" Foreground="#0284C7" FontWeight="Bold"/>
+                                                    <TextBlock Text="ℹ️" Foreground="#38BDF8" FontWeight="Bold"/>
                                                 </Setter.Value>
                                             </Setter>
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding Level}" Value="Success">
                                             <Setter Property="Content">
                                                 <Setter.Value>
-                                                    <TextBlock Text="✅" Foreground="#22C55E" FontWeight="Bold"/>
+                                                    <TextBlock Text="✅" Foreground="#4ADE80" FontWeight="Bold"/>
                                                 </Setter.Value>
                                             </Setter>
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding Level}" Value="Warning">
                                             <Setter Property="Content">
                                                 <Setter.Value>
-                                                    <TextBlock Text="⚠️" Foreground="#EAB308" FontWeight="Bold"/>
+                                                    <TextBlock Text="⚠️" Foreground="#FBBF24" FontWeight="Bold"/>
                                                 </Setter.Value>
                                             </Setter>
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding Level}" Value="Error">
                                             <Setter Property="Content">
                                                 <Setter.Value>
-                                                    <TextBlock Text="❌" Foreground="#EF4444" FontWeight="Bold"/>
+                                                    <TextBlock Text="❌" Foreground="#F87171" FontWeight="Bold"/>
                                                 </Setter.Value>
                                             </Setter>
                                         </DataTrigger>
@@ -130,17 +132,17 @@
                                 <Style TargetType="TextBlock">
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding Level}" Value="Error">
-                                            <Setter Property="Foreground" Value="#DC2626"/>
+                                            <Setter Property="Foreground" Value="#F87171"/>
                                             <Setter Property="FontWeight" Value="SemiBold"/>
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding Level}" Value="Warning">
-                                            <Setter Property="Foreground" Value="#D97706"/>
+                                            <Setter Property="Foreground" Value="#FBBF24"/>
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding Level}" Value="Success">
-                                            <Setter Property="Foreground" Value="#15803D"/>
+                                            <Setter Property="Foreground" Value="#4ADE80"/>
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding Level}" Value="Info">
-                                            <Setter Property="Foreground" Value="#0F172A"/>
+                                            <Setter Property="Foreground" Value="{StaticResource TextLight}"/>
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
@@ -159,8 +161,8 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             
-            <Button Grid.Column="0" Content="📋 复制全部日志" Height="30" Width="130" Click="BtnCopyLogs_Click" Style="{StaticResource DefaultButtonStyle}"/>
-            <Button Grid.Column="2" x:Name="BtnClose" Content="关闭 (Close)" Height="30" Width="100" Click="BtnClose_Click" IsEnabled="False" Style="{StaticResource AccentButtonStyle}"/>
+            <Button Grid.Column="0" Content="📋 复制全部日志" Height="30" Width="130" Click="BtnCopyLogs_Click" Background="{StaticResource ButtonBg}" Foreground="White" BorderBrush="{StaticResource BorderDark}" BorderThickness="1"/>
+            <Button Grid.Column="2" x:Name="BtnClose" Content="关闭 (Close)" Height="30" Width="100" Click="BtnClose_Click" IsEnabled="False" Background="{StaticResource AccentBlue}" Foreground="White" BorderThickness="0"/>
         </Grid>
     </Grid>
 </Window>

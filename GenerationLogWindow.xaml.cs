@@ -14,6 +14,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
         private ObservableCollection<LogEntry> _allLogs = new ObservableCollection<LogEntry>();
         private Action _generationAction;
         private bool _isCompleted = false;
+        private long _lastDoEventsTime = 0;
 
         public GenerationLogWindow(Window owner, Action generationAction)
         {
@@ -49,15 +50,20 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
             {
                 _allLogs.Add(entry);
                 ApplyFilter();
-                
+
                 // Auto scroll to the end
                 if (LstLogs.Items.Count > 0)
                 {
                     LstLogs.ScrollIntoView(LstLogs.Items[LstLogs.Items.Count - 1]);
                 }
 
-                // Force WPF layout and rendering update
-                DoEvents();
+                // 限流：两次界面强行重绘的时间间隔不小于 50 毫秒，避免海量日志高频刷新压垮 UI 线程
+                long now = DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond;
+                if (now - _lastDoEventsTime > 50)
+                {
+                    _lastDoEventsTime = now;
+                    DoEvents(this.Dispatcher);
+                }
             });
         }
 
@@ -67,13 +73,13 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
             ConfiguratorService.GenerationLogs.Clear();
             GenProgressBar.IsIndeterminate = true;
             TxtSummaryStatus.Text = "正在生成原理图，请稍候...";
-            
+
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
             try
             {
                 ConfiguratorService.Log("Info", "===== 开始原理图生成流程 =====");
-                DoEvents();
+                DoEvents(this.Dispatcher);
 
                 // Run generation action (typically blocks, but DoEvents will pump messages)
                 _generationAction?.Invoke();
@@ -114,9 +120,9 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                 var entry = item as LogEntry;
                 if (entry == null) continue;
 
-                bool matchesSearch = string.IsNullOrEmpty(search) || 
+                bool matchesSearch = string.IsNullOrEmpty(search) ||
                                      entry.Message.IndexOf(search, StringComparison.OrdinalIgnoreCase) >= 0;
-                
+
                 bool matchesLevel = true;
                 if (selectedLevel != null && selectedLevel != "全部日志级别")
                 {
@@ -171,9 +177,9 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
         /// <summary>
         /// Force the WPF UI thread to process all pending paint and layout events.
         /// </summary>
-        public static void DoEvents()
+        public static void DoEvents(Dispatcher dispatcher)
         {
-            Application.Current.Dispatcher.Invoke(DispatcherPriority.Background, new Action(() => { }));
+            dispatcher.Invoke(DispatcherPriority.Background, new Action(() => { }));
         }
     }
 }

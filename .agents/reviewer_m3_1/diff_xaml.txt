@@ -1,0 +1,875 @@
+﻿diff --git a/ConfiguratorWindow.xaml b/ConfiguratorWindow.xaml
+index bcceb81..35a3166 100644
+--- a/ConfiguratorWindow.xaml
++++ b/ConfiguratorWindow.xaml
+@@ -9,6 +9,7 @@
+         Background="#1F1F1F" 
+         ui:WindowHelper.UseModernWindowStyle="True"
+         ui:ThemeManager.RequestedTheme="Dark"
++        ui:ScrollViewerHelper.AutoHideScrollBars="False"
+         FontFamily="Segoe UI, Microsoft YaHei">
+     <Window.Resources>
+         <ResourceDictionary>
+@@ -123,6 +124,7 @@
+ 
+             <!-- Expander Flat Dark Style -->
+             <Style TargetType="Expander">
++                <Setter Property="Foreground" Value="White"/>
+                 <Setter Property="Background" Value="#1F1F1F"/>
+                 <Setter Property="BorderBrush" Value="#2D2D2D"/>
+                 <Setter Property="BorderThickness" Value="1"/>
+@@ -143,6 +145,7 @@
+             <local:MacroPathToMarginConverter x:Key="MacroPathToMarginConverter"/>
+             <local:StringListConverter x:Key="StringListConverter"/>
+             <local:MacroPathToFileNameConverter x:Key="MacroPathToFileNameConverter"/>
++            <local:RowIndexConverter x:Key="RowIndexConverter"/>
+ 
+             <!-- ListBox Selection Style for Left Selection Pane -->
+             <Style x:Key="SelectionPaneListItem" TargetType="ListBoxItem">
+@@ -198,6 +201,10 @@
+                     <Trigger Property="IsMouseOver" Value="True">
+                         <Setter Property="Background" Value="#252525"/>
+                     </Trigger>
++                    <Trigger Property="Tag" Value="Placeholder">
++                        <Setter Property="Background" Value="#2D2D2D"/>
++                        <Setter Property="Opacity" Value="0.3"/>
++                    </Trigger>
+                 </Style.Triggers>
+             </Style>
+         </ResourceDictionary>
+@@ -219,12 +226,12 @@
+                 </Grid.ColumnDefinitions>
+ 
+                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="15,0,0,0">
+-                    <Border Width="24" Height="24" Background="#E60012" CornerRadius="3" VerticalAlignment="Center">
+-                        <TextBlock Text="e" Foreground="White" FontSize="16" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-2,0,0"/>
++                    <Border Width="24" Height="24" Background="#0084FF" CornerRadius="5" VerticalAlignment="Center">
++                        <TextBlock Text="A" Foreground="White" FontSize="15" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-1,0,0"/>
+                     </Border>
+-                    <TextBlock Text="eBUILD" Foreground="White" FontSize="14" FontWeight="Bold" VerticalAlignment="Center" Margin="10,0,0,0"/>
++                    <TextBlock Text="ASC" Foreground="White" FontSize="14" FontWeight="Bold" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                     <TextBlock Text="|" Foreground="#475569" FontSize="14" VerticalAlignment="Center" Margin="8,0"/>
+-                    <TextBlock x:Name="TxtBreadcrumbs" Text="Designer > eBuild_Macro_GettingStarted > Macro Typicals" Foreground="#94A3B8" FontSize="12" VerticalAlignment="Center"/>
++                    <TextBlock x:Name="TxtBreadcrumbs" Text="Designer > ASC_Macro_GettingStarted > Macro Typicals" Foreground="#94A3B8" FontSize="12" VerticalAlignment="Center"/>
+                 </StackPanel>
+ 
+                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,15,0">
+@@ -265,7 +272,7 @@
+ 
+                 <StackPanel Grid.Row="0" Margin="0,10,0,0">
+                     <Button x:Name="BtnExpandLeft" Content="┬╗" FontSize="18" Foreground="#94A3B8" Style="{StaticResource SidebarIconBtn}" Height="40" Width="60" Click="BtnExpandLeft_Click" Visibility="Collapsed" ToolTip="σ▒òσ╝Çσ╖ªΘ¥óµ¥┐" Margin="0,0,0,10"/>
+-                    <RadioButton Content="Library" Tag="≡ƒÆ╝" Style="{StaticResource VerticalNavTabBtn}" Checked="Tab_Checked" x:Name="RadTabBuilder" ToolTip="Θàìτ╜«Θí╣τ¢«σ║ô"/>
++                    <RadioButton Content="Builder" Tag="≡ƒÆ╝" Style="{StaticResource VerticalNavTabBtn}" Checked="Tab_Checked" x:Name="RadTabBuilder" ToolTip="Θàìτ╜«Θí╣τ¢«τöƒµêÉσÖ¿"/>
+                     <RadioButton Content="Macro" Tag="≡ƒº┐" Style="{StaticResource VerticalNavTabBtn}" IsChecked="True" Checked="Tab_Checked" x:Name="RadTabMacro" ToolTip="σ«ÅΦºäσêÖ (Macro Typicals)"/>
+                     <RadioButton Content="Typical" Tag="≡ƒæÑ" Style="{StaticResource VerticalNavTabBtn}" Checked="Tab_Checked" x:Name="RadTabGroup" ToolTip="ΦºäσêÖτ╗ä (Typical Groups)"/>
+                     <RadioButton Content="Config" Tag="ΓÜÖ∩╕Å" Style="{StaticResource VerticalNavTabBtn}" Checked="Tab_Checked" x:Name="RadTabConfig" ToolTip="Θàìτ╜«σÖ¿ (Configurators)"/>
+@@ -296,12 +303,22 @@
+                 <Border Grid.Row="1" Padding="15,0,15,10" BorderBrush="#2D2D2D" BorderThickness="0,0,0,1">
+                     <Grid>
+                         <StackPanel Orientation="Horizontal">
+-                            <Button x:Name="BtnAddNewItem" Content="Γ₧ò" FontSize="11" Style="{StaticResource SidebarIconBtn}" Width="24" Height="24" Click="BtnAddNewItem_Click" ToolTip="µ╖╗σèá"/>
+-                            <Button Content="≡ƒôé" FontSize="11" Style="{StaticResource SidebarIconBtn}" Width="24" Height="24" Click="BtnAddNewFolder_Click" ToolTip="µû░σ╗║µûçΣ╗╢σñ╣" Margin="5,0,0,0"/>
+-                            <Button Content="≡ƒôæ" FontSize="11" Style="{StaticResource SidebarIconBtn}" Width="24" Height="24" Click="BtnCopySidebarItem_Click" ToolTip="σñìσê╢" Margin="5,0,0,0"/>
+-                            <Button Content="≡ƒùæ∩╕Å" FontSize="11" Style="{StaticResource SidebarIconBtn}" Width="24" Height="24" Click="BtnDeleteSidebarItem_Click" ToolTip="σêáΘÖñ" Margin="5,0,0,0"/>
++                            <Button x:Name="BtnAddNewItem" Style="{StaticResource SidebarIconBtn}" Width="24" Height="24" Click="BtnAddNewItem_Click" ToolTip="µ╖╗σèá">
++                                <Path Data="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" Fill="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}" Width="13" Height="13" Stretch="Uniform"/>
++                            </Button>
++                            <Button Style="{StaticResource SidebarIconBtn}" Width="24" Height="24" Click="BtnAddNewFolder_Click" ToolTip="µû░σ╗║µûçΣ╗╢σñ╣" Margin="5,0,0,0">
++                                <Path Data="M10,4H4C2.89,4 2,4.89 2,6V18C2,19.1 2.9,20 4,20H20C21.1,20 22,19.1 22,18V8C22,6.9 21.1,6 20,6H12L10,4Z" Fill="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}" Width="13" Height="13" Stretch="Uniform"/>
++                            </Button>
++                            <Button Style="{StaticResource SidebarIconBtn}" Width="24" Height="24" Click="BtnCopySidebarItem_Click" ToolTip="σñìσê╢" Margin="5,0,0,0">
++                                <Path Data="M19,21H8C6.9,21 6,20.1 6,19V6H8V19H19V21M21,15H11C9.9,15 9,14.1 9,13V3C9,1.9 9.9,1 11,1H21C22.1,1 23,1.9 23,3V13C23,14.1 22.1,15 21,15M21,3H11V13H21V3Z" Fill="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}" Width="13" Height="13" Stretch="Uniform"/>
++                            </Button>
++                            <Button Style="{StaticResource SidebarIconBtn}" Width="24" Height="24" Click="BtnDeleteSidebarItem_Click" ToolTip="σêáΘÖñ" Margin="5,0,0,0">
++                                <Path Data="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z" Fill="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}" Width="13" Height="13" Stretch="Uniform"/>
++                            </Button>
++                            <Button Style="{StaticResource SidebarIconBtn}" Width="24" Height="24" Click="BtnToggleSearch_Click" ToolTip="µÉ£τ┤ó" Margin="5,0,0,0">
++                                <Path Data="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z" Fill="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}" Width="13" Height="13" Stretch="Uniform"/>
++                            </Button>
+                         </StackPanel>
+-                        <Button Content="≡ƒöì" HorizontalAlignment="Right" FontSize="11" Style="{StaticResource SidebarIconBtn}" Width="24" Height="24" Click="BtnToggleSearch_Click" ToolTip="µÉ£τ┤ó"/>
+                     </Grid>
+                 </Border>
+ 
+@@ -342,13 +359,13 @@
+             <!-- COLUMN 3: CENTER WORKSPACE -->
+             <Grid Grid.Column="3" Background="#1F1F1F">
+                 <Grid.ColumnDefinitions>
+-                    <ColumnDefinition x:Name="ColMacroNav" Width="0" MinWidth="0"/> <!-- Macro Navigator Pane -->
++                    <ColumnDefinition x:Name="ColMacroNav" Width="280" MinWidth="0"/> <!-- Macro Navigator Pane -->
+                     <ColumnDefinition x:Name="ColMacroNavSplitter" Width="Auto"/> <!-- Navigator Splitter -->
+                     <ColumnDefinition Width="*"/>   <!-- Main Editor Panel -->
+                 </Grid.ColumnDefinitions>
+ 
+                 <!-- MACRO NAVIGATOR PANE -->
+-                <Border Grid.Column="0" x:Name="GridMacroNav" Background="#222" Visibility="Collapsed" BorderBrush="#2D2D2D" BorderThickness="0,0,1,0">
++                <Border Grid.Column="0" x:Name="GridMacroNav" Background="#222" Visibility="Visible" BorderBrush="#2D2D2D" BorderThickness="0,0,1,0">
+                     <Grid>
+                         <Grid.RowDefinitions>
+                             <RowDefinition Height="Auto"/>
+@@ -369,7 +386,14 @@
+                             <TextBox x:Name="TxtSearchMacro" Height="28" Margin="0,0,0,8" TextChanged="TxtSearchMacro_TextChanged" ui:ControlHelper.PlaceholderText="µÉ£τ┤óσ«Å..."/>
+                             <Button x:Name="BtnRefreshMacroNav" Grid.Row="1" Content="≡ƒöä σê╖µû░σ«ÅσêùΦí¿" Margin="0,0,0,10" Style="{StaticResource SidebarIconBtn}" Background="#333" Height="28" Click="BtnRefreshMacroNav_Click"/>
+                             <ProgressBar x:Name="ProgressBarLoad" Grid.Row="1" Height="4" VerticalAlignment="Bottom" IsIndeterminate="True" Visibility="Collapsed"/>
+-                            <TreeView Grid.Row="2" x:Name="TvMacros" Background="#1A1A1A" BorderThickness="0" MouseDoubleClick="TvMacros_MouseDoubleClick">
++                            <TreeView Grid.Row="2" x:Name="TvMacros" Background="#1A1A1A" BorderThickness="0" TreeViewItem.Expanded="TvMacros_Expanded" MouseDoubleClick="TvMacros_MouseDoubleClick">
++                                <TreeView.Resources>
++                                    <!-- Standard WPF selection override to prevent white-on-white text issues -->
++                                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#0084FF" />
++                                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="White" />
++                                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#2B3B4C" />
++                                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="White" />
++                                </TreeView.Resources>
+                                 <TreeView.ItemContainerStyle>
+                                     <Style TargetType="TreeViewItem">
+                                         <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+@@ -378,8 +402,23 @@
+                                 <TreeView.ItemTemplate>
+                                     <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                                         <StackPanel Orientation="Horizontal" Margin="2,2,0,2">
+-                                            <TextBlock Text="{Binding Icon}" Margin="0,0,5,0"/>
++                                            <TextBlock Text="{Binding Icon}" Margin="0,0,5,0" FontFamily="Segoe UI Emoji" Foreground="#E2E8F0" VerticalAlignment="Center"/>
+                                             <TextBlock Text="{Binding Name}" Foreground="White" VerticalAlignment="Center"/>
++                                            <Button Content="≡ƒæü" Margin="8,0,0,0" Padding="2,0" Background="Transparent" BorderThickness="0" Foreground="#94A3B8" Cursor="Hand" Click="BtnPreviewVariant_Click" ToolTip="ΘóäΦºêσ«Åσ¢╛σ╜ó">
++                                                <Button.Style>
++                                                    <Style TargetType="Button">
++                                                        <Setter Property="Visibility" Value="Collapsed"/>
++                                                        <Style.Triggers>
++                                                            <DataTrigger Binding="{Binding Type}" Value="Variant">
++                                                                <Setter Property="Visibility" Value="Visible"/>
++                                                            </DataTrigger>
++                                                            <DataTrigger Binding="{Binding Type}" Value="Page">
++                                                                <Setter Property="Visibility" Value="Visible"/>
++                                                            </DataTrigger>
++                                                        </Style.Triggers>
++                                                    </Style>
++                                                </Button.Style>
++                                            </Button>
+                                         </StackPanel>
+                                     </HierarchicalDataTemplate>
+                                 </TreeView.ItemTemplate>
+@@ -389,10 +428,10 @@
+                 </Border>
+ 
+                 <!-- NAVIGATOR SPLITTER -->
+-                <GridSplitter Grid.Column="1" x:Name="SplitterMacroNav" Width="3" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="#151515" Visibility="Collapsed"/>
++                <GridSplitter Grid.Column="1" x:Name="SplitterMacroNav" Width="4" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="#151515" Visibility="Visible"/>
+ 
+                 <!-- MAIN EDITOR PANEL -->
+-                <Grid Grid.Column="2">
++                <Grid Grid.Column="2" MinWidth="300">
+                     <Grid.RowDefinitions>
+                         <RowDefinition Height="Auto"/> <!-- Workspace Title Bar -->
+                         <RowDefinition Height="*"/>    <!-- Scrollable content -->
+@@ -412,7 +451,7 @@
+                         <Grid>
+                             <StackPanel Orientation="Horizontal">
+                                 <TextBox x:Name="TxtSelectedName" FontSize="16" FontWeight="Bold" Foreground="White" Background="Transparent" BorderThickness="0" Width="400" LostFocus="TxtSelectedName_LostFocus"/>
+-                                <TextBlock Text="Γ£Å∩╕Å" Foreground="#475569" VerticalAlignment="Center" Margin="5,0,0,0"/>
++                                <ui:SymbolIcon Symbol="Edit" Foreground="#475569" VerticalAlignment="Center" Margin="5,0,0,0"/>
+                             </StackPanel>
+                             <!-- Expand Details Panel Float Button -->
+                             <Button x:Name="BtnExpandRight" Content="┬½" HorizontalAlignment="Right" FontSize="14" Foreground="#94A3B8" Style="{StaticResource SidebarIconBtn}" Click="BtnExpandRight_Click" Visibility="Collapsed"/>
+@@ -423,40 +462,23 @@
+                     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                         <StackPanel Margin="20">
+                             <!-- ACCORDION 1: MACROS -->
+-                            <Expander x:Name="ExpElements" IsExpanded="True" HeaderTemplate="{x:Null}">
+-                                <Expander.Header>
+-                                    <Grid HorizontalAlignment="{Binding Path=HorizontalAlignment, RelativeSource={RelativeSource AncestorType=ContentPresenter}, Mode=OneWayToSource}">
+-                                        <TextBlock x:Name="TxtHeaderElements" Text="Macros (0)" Foreground="White" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"/>
+-                                    </Grid>
+-                                </Expander.Header>
++                            <Expander x:Name="ExpElements" IsExpanded="True" Header="Macros (0)">
+                                 <StackPanel Margin="10,5">
+                                     <Grid Margin="0,0,0,10">
++                                        <Grid.ColumnDefinitions>
++                                            <ColumnDefinition Width="*"/>
++                                            <ColumnDefinition Width="Auto"/>
++                                        </Grid.ColumnDefinitions>
+                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                             <CheckBox Content="Structure view" Foreground="White" Margin="0,0,15,0"/>
+                                             <TextBox Width="180" Height="24" Background="#1A1A1A" BorderThickness="1" BorderBrush="#333" ui:ControlHelper.PlaceholderText="Search..."/>
+                                         </StackPanel>
++                                        <Button Grid.Column="1" Style="{StaticResource SidebarIconBtn}" Click="BtnToggleColumns_Click" ToolTip="µÿ╛τñ║/ΘÜÉΦùÅσêù" Width="30" Height="24" Margin="5,0,0,0">
++                                            <ui:SymbolIcon Symbol="Filter"/>
++                                        </Button>
+                                     </Grid>
+ 
+-                                    <!-- Macros Table Headers -->
+-                                    <Border Background="#2A2A2A" BorderBrush="#333" BorderThickness="1,1,1,0" Padding="10,8">
+-                                        <Grid>
+-                                            <Grid.ColumnDefinitions>
+-                                                <ColumnDefinition Width="40"/>  <!-- drag index -->
+-                                                <ColumnDefinition Width="2*"/> <!-- Name -->
+-                                                <ColumnDefinition Width="3*"/> <!-- Path -->
+-                                                <ColumnDefinition Width="1.5*"/> <!-- Variant -->
+-                                                <ColumnDefinition Width="1.5*"/> <!-- Rep type -->
+-                                                <ColumnDefinition Width="100"/> <!-- Actions -->
+-                                            </Grid.ColumnDefinitions>
+-                                            <TextBlock Grid.Column="1" Text="Name" Foreground="#94A3B8" FontWeight="SemiBold" FontSize="11.5"/>
+-                                            <TextBlock Grid.Column="2" Text="Path" Foreground="#94A3B8" FontWeight="SemiBold" FontSize="11.5"/>
+-                                            <TextBlock Grid.Column="3" Text="Variant" Foreground="#94A3B8" FontWeight="SemiBold" FontSize="11.5"/>
+-                                            <TextBlock Grid.Column="4" Text="Representation type" Foreground="#94A3B8" FontWeight="SemiBold" FontSize="11.5"/>
+-                                            <TextBlock Grid.Column="5" Text="Actions" Foreground="#94A3B8" FontWeight="SemiBold" FontSize="11.5" HorizontalAlignment="Center"/>
+-                                        </Grid>
+-                                    </Border>
+-
+-                                    <!-- Macros List Box & Empty State -->
++                                    <!-- Macros DataGrid & Empty State -->
+                                     <Grid>
+                                         <!-- Empty State -->
+                                         <Border x:Name="GridElementsEmptyState" Background="#1A1A1A" BorderBrush="#333" BorderThickness="1" Padding="20" MinHeight="100" Visibility="Collapsed">
+@@ -466,53 +488,109 @@
+                                             </StackPanel>
+                                         </Border>
+ 
+-                                        <ListBox x:Name="ItrElements" Background="Transparent" BorderBrush="#333" BorderThickness="1" MinHeight="100"
+-                                                 ItemContainerStyle="{StaticResource GridRowListItem}"
+-                                                 SelectionChanged="ItrElements_SelectionChanged">
+-                                            <ListBox.ItemTemplate>
+-                                                <DataTemplate>
+-                                                    <Grid>
+-                                                        <Grid.ColumnDefinitions>
+-                                                            <ColumnDefinition Width="40"/>
+-                                                            <ColumnDefinition Width="2*"/>
+-                                                            <ColumnDefinition Width="3*"/>
+-                                                            <ColumnDefinition Width="1.5*"/>
+-                                                            <ColumnDefinition Width="1.5*"/>
+-                                                            <ColumnDefinition Width="100"/>
+-                                                        </Grid.ColumnDefinitions>
+-
+-                                                        <StackPanel Orientation="Horizontal" Grid.Column="0" VerticalAlignment="Center">
+-                                                            <TextBlock Text="::" Foreground="{StaticResource TextMuted}" Margin="0,0,5,0"/>
+-                                                            <TextBlock Text="0" Foreground="{StaticResource TextMuted}"/>
+-                                                        </StackPanel>
+-
+-                                                        <TextBlock Grid.Column="1" Text="{Binding MacroPath, Converter={StaticResource MacroPathToFileNameConverter}}" Foreground="White" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+-                                                        <TextBlock Grid.Column="2" Text="{Binding MacroPath}" Foreground="#94A3B8" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+-                                                        <TextBlock Grid.Column="3" Text="Variant A" Foreground="White" VerticalAlignment="Center"/>
+-                                                        <TextBlock Grid.Column="4" Text="Multi-line" Foreground="White" VerticalAlignment="Center"/>
+-
+-                                                        <StackPanel Grid.Column="5" Orientation="Horizontal" HorizontalAlignment="Center">
+-                                                            <Button Content="Γ£Å∩╕Å" Style="{StaticResource RowActionBtn}" Click="BtnReplaceElementMacro_Click" ToolTip="τ╝ûΦ╛æΦ╖»σ╛ä"/>
+-                                                            <Button Grid.Column="1" Content="≡ƒöì" Style="{StaticResource RowActionBtn}" Click="BtnShowElementPreview_Click" ToolTip="ΘóäΦºê" Margin="5,0,0,0"/>
+-                                                            <Button Grid.Column="2" Content="Γï«" Style="{StaticResource RowActionBtn}" Click="BtnElementMenu_Click" ToolTip="ΦÅ£σìò" Margin="5,0,0,0"/>
+-                                                        </StackPanel>
+-                                                    </Grid>
+-                                                </DataTemplate>
+-                                            </ListBox.ItemTemplate>
+-                                        </ListBox>
++                                        <DataGrid x:Name="ItrElements" AutoGenerateColumns="False" CanUserResizeColumns="True" HeadersVisibility="Column"
++                                                  Background="Transparent" RowBackground="Transparent" AlternatingRowBackground="Transparent"
++                                                  BorderBrush="#333" BorderThickness="1" MinHeight="100" SelectionMode="Single"
++                                                  GridLinesVisibility="None" CanUserAddRows="False" CanUserDeleteRows="False"
++                                                  RowHeaderWidth="0" IsReadOnly="True" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Center"
++                                                  SelectionChanged="ItrElements_SelectionChanged"
++                                                  AllowDrop="True" Drop="ItrElements_Drop" DragOver="ItrElements_DragOver" 
++                                                  PreviewMouseMove="General_PreviewMouseMove"
++                                                  PreviewMouseLeftButtonUp="General_PreviewMouseLeftButtonUp"
++                                                  LostMouseCapture="General_LostMouseCapture">
++                                            <DataGrid.RowStyle>
++                                                <Style TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
++                                                    <Style.Triggers>
++                                                        <Trigger Property="Tag" Value="Placeholder">
++                                                            <Setter Property="Background" Value="#2D2D2D"/>
++                                                            <Setter Property="Opacity" Value="0.3"/>
++                                                        </Trigger>
++                                                    </Style.Triggers>
++                                                </Style>
++                                            </DataGrid.RowStyle>
++                                            <DataGrid.Columns>
++                                                <DataGridTemplateColumn Width="50" Header="" CanUserResize="False">
++                                                     <DataGridTemplateColumn.CellTemplate>
++                                                         <DataTemplate>
++                                                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center">
++                                                                 <Border Background="Transparent" Cursor="SizeAll" Margin="0,0,8,0" Padding="4" Width="20" Height="24"
++                                                                         PreviewMouseLeftButtonDown="DragGrip_PreviewMouseLeftButtonDown">
++                                                                     <Path Data="M4,6A1,1 0 1,1 2,6A1,1 0 1,1 4,6 M4,12A1,1 0 1,1 2,12A1,1 0 1,1 4,12 M4,18A1,1 0 1,1 2,18A1,1 0 1,1 4,18 M10,6A1,1 0 1,1 8,6A1,1 0 1,1 10,6 M10,12A1,1 0 1,1 8,12A1,1 0 1,1 10,12 M10,18A1,1 0 1,1 8,18A1,1 0 1,1 10,18" 
++                                                                           Fill="#94A3B8" Width="10" Height="15" Stretch="Uniform"
++                                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
++                                                                 </Border>
++                                                                 <TextBlock VerticalAlignment="Center" Foreground="{StaticResource TextMuted}">
++                                                                     <TextBlock.Text>
++                                                                         <MultiBinding Converter="{StaticResource RowIndexConverter}">
++                                                                             <Binding/>
++                                                                             <Binding RelativeSource="{RelativeSource AncestorType=DataGrid}"/>
++                                                                         </MultiBinding>
++                                                                     </TextBlock.Text>
++                                                                 </TextBlock>
++                                                             </StackPanel>
++                                                         </DataTemplate>
++                                                     </DataGridTemplateColumn.CellTemplate>
++                                                </DataGridTemplateColumn>
++
++                                                <DataGridTemplateColumn x:Name="ColName" Width="2*" Header="Name">
++                                                     <DataGridTemplateColumn.CellTemplate>
++                                                         <DataTemplate>
++                                                             <TextBlock Text="{Binding MacroPath, Converter={StaticResource MacroPathToFileNameConverter}}" Foreground="White" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="5,0"/>
++                                                         </DataTemplate>
++                                                     </DataGridTemplateColumn.CellTemplate>
++                                                </DataGridTemplateColumn>
++
++                                                <DataGridTemplateColumn x:Name="ColPath" Width="3*" Header="Path">
++                                                     <DataGridTemplateColumn.CellTemplate>
++                                                         <DataTemplate>
++                                                             <TextBlock Text="{Binding MacroPath}" Foreground="#94A3B8" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="5,0"/>
++                                                         </DataTemplate>
++                                                     </DataGridTemplateColumn.CellTemplate>
++                                                </DataGridTemplateColumn>
++
++                                                <DataGridTemplateColumn x:Name="ColVariant" Width="1.5*" Header="Variant">
++                                                     <DataGridTemplateColumn.CellTemplate>
++                                                         <DataTemplate>
++                                                             <TextBlock Text="Variant A" Foreground="White" VerticalAlignment="Center" Margin="5,0"/>
++                                                         </DataTemplate>
++                                                     </DataGridTemplateColumn.CellTemplate>
++                                                </DataGridTemplateColumn>
++
++                                                <DataGridTemplateColumn x:Name="ColRepType" Width="1.5*" Header="Representation type">
++                                                     <DataGridTemplateColumn.CellTemplate>
++                                                         <DataTemplate>
++                                                             <TextBlock Text="Multi-line" Foreground="White" VerticalAlignment="Center" Margin="5,0"/>
++                                                         </DataTemplate>
++                                                     </DataGridTemplateColumn.CellTemplate>
++                                                </DataGridTemplateColumn>
++
++                                                <DataGridTemplateColumn Width="100" Header="Actions" CanUserResize="False">
++                                                     <DataGridTemplateColumn.CellTemplate>
++                                                         <DataTemplate>
++                                                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
++                                                                 <Button Style="{StaticResource RowActionBtn}" Click="BtnReplaceElementMacro_Click" ToolTip="τ╝ûΦ╛æΦ╖»σ╛ä">
++                                                                     <ui:SymbolIcon Symbol="Edit"/>
++                                                                 </Button>
++                                                                 <Button Style="{StaticResource RowActionBtn}" Click="BtnShowElementPreview_Click" ToolTip="ΘóäΦºê" Margin="5,0,0,0">
++                                                                     <ui:SymbolIcon Symbol="Find"/>
++                                                                 </Button>
++                                                                 <Button Content="Γï«" Style="{StaticResource RowActionBtn}" Click="BtnElementMenu_Click" ToolTip="ΦÅ£σìò" Margin="5,0,0,0"/>
++                                                             </StackPanel>
++                                                         </DataTemplate>
++                                                     </DataGridTemplateColumn.CellTemplate>
++                                                </DataGridTemplateColumn>
++                                            </DataGrid.Columns>
++                                        </DataGrid>
+                                     </Grid>
+ 
+-                                    <Button Content="∩╝ï µ╖╗σèáσ«Å" Margin="0,10,0,0" Style="{StaticResource SidebarIconBtn}" Background="#252525" Height="28" Padding="12,0" HorizontalAlignment="Left" Click="BtnAddElement_Click"/>
++                                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
++                                        <Button Content="∩╝ï µ╖╗σèáΘÇëΣ╕¡σ«Å" Style="{StaticResource SidebarIconBtn}" Background="#0084FF" Foreground="White" Height="28" Padding="12,0" Click="BtnAddElement_Click"/>
++                                    </StackPanel>
+                                 </StackPanel>
+                             </Expander>
+ 
+                             <!-- ACCORDION 2: SCRIPT TYPICALS -->
+-                            <Expander x:Name="ExpScriptTypicals" IsExpanded="False" Visibility="Collapsed" HeaderTemplate="{x:Null}">
+-                                <Expander.Header>
+-                                    <Grid HorizontalAlignment="{Binding Path=HorizontalAlignment, RelativeSource={RelativeSource AncestorType=ContentPresenter}, Mode=OneWayToSource}">
+-                                        <TextBlock x:Name="TxtHeaderScriptTypicals" Text="Script Typicals (0)" Foreground="White" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"/>
+-                                    </Grid>
+-                                </Expander.Header>
++                            <Expander x:Name="ExpScriptTypicals" IsExpanded="False" Visibility="Collapsed" Header="Script Typicals (0)">
+                                 <StackPanel Margin="10,5">
+                                     <Grid Height="40">
+                                          <TextBlock Text="No Script Typicals" Foreground="{StaticResource TextMuted}" FontStyle="Italic" VerticalAlignment="Center" Margin="10,0"/>
+@@ -522,12 +600,7 @@
+                             </Expander>
+ 
+                             <!-- ACCORDION 3: TYPICAL INSTANCES -->
+-                            <Expander x:Name="ExpInstances" IsExpanded="True" Visibility="Collapsed" HeaderTemplate="{x:Null}">
+-                                <Expander.Header>
+-                                    <Grid HorizontalAlignment="{Binding Path=HorizontalAlignment, RelativeSource={RelativeSource AncestorType=ContentPresenter}, Mode=OneWayToSource}">
+-                                        <TextBlock x:Name="TxtHeaderInstances" Text="Macro Typicals and Typical Groups (0)" Foreground="White" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"/>
+-                                    </Grid>
+-                                </Expander.Header>
++                            <Expander x:Name="ExpInstances" IsExpanded="True" Visibility="Collapsed" Header="Macro Typicals and Typical Groups (0)">
+                                 <StackPanel Margin="10,5">
+                                     <Grid Margin="0,0,0,10">
+                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+@@ -539,7 +612,7 @@
+                                     <Border Background="#2A2A2A" BorderBrush="#333" BorderThickness="1,1,1,0" Padding="10,8">
+                                         <Grid>
+                                             <Grid.ColumnDefinitions>
+-                                                <ColumnDefinition Width="40"/>
++                                                <ColumnDefinition Width="45"/>
+                                                 <ColumnDefinition Width="3*"/> <!-- Target Name -->
+                                                 <ColumnDefinition Width="2*"/> <!-- Type -->
+                                                 <ColumnDefinition Width="80"/> <!-- Actions -->
+@@ -561,23 +634,39 @@
+ 
+                                         <ListBox x:Name="ItrInstances" Background="Transparent" BorderBrush="#333" BorderThickness="1" MinHeight="100"
+                                                  ItemContainerStyle="{StaticResource GridRowListItem}"
+-                                                 SelectionChanged="ItrInstances_SelectionChanged">
++                                                 SelectionChanged="ItrInstances_SelectionChanged"
++                                                 PreviewMouseMove="General_PreviewMouseMove"
++                                                 PreviewMouseLeftButtonUp="General_PreviewMouseLeftButtonUp"
++                                                 LostMouseCapture="General_LostMouseCapture">
+                                             <ListBox.ItemTemplate>
+                                                 <DataTemplate>
+                                                     <Grid>
+                                                         <Grid.ColumnDefinitions>
+-                                                            <ColumnDefinition Width="40"/>
++                                                            <ColumnDefinition Width="45"/>
+                                                             <ColumnDefinition Width="3*"/>
+                                                             <ColumnDefinition Width="2*"/>
+                                                             <ColumnDefinition Width="80"/>
+                                                         </Grid.ColumnDefinitions>
+ 
+                                                         <StackPanel Orientation="Horizontal" Grid.Column="0" VerticalAlignment="Center">
+-                                                            <TextBlock Text="::" Foreground="{StaticResource TextMuted}" Margin="0,0,5,0"/>
+-                                                            <TextBlock Text="0" Foreground="{StaticResource TextMuted}"/>
++                                                            <Border Background="Transparent" Cursor="SizeAll" Margin="0,0,8,0" Padding="4" Width="20" Height="24"
++                                                                    PreviewMouseLeftButtonDown="DragGrip_PreviewMouseLeftButtonDown">
++                                                                <Path Data="M4,6A1,1 0 1,1 2,6A1,1 0 1,1 4,6 M4,12A1,1 0 1,1 2,12A1,1 0 1,1 4,12 M4,18A1,1 0 1,1 2,18A1,1 0 1,1 4,18 M10,6A1,1 0 1,1 8,6A1,1 0 1,1 10,6 M10,12A1,1 0 1,1 8,12A1,1 0 1,1 10,12 M10,18A1,1 0 1,1 8,18A1,1 0 1,1 10,18" 
++                                                                      Fill="#94A3B8" Width="10" Height="15" Stretch="Uniform"
++                                                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
++                                                            </Border>
++                                                            <TextBlock VerticalAlignment="Center" Foreground="{StaticResource TextMuted}">
++                                                                <TextBlock.Text>
++                                                                    <MultiBinding Converter="{StaticResource RowIndexConverter}">
++                                                                        <Binding/>
++                                                                        <Binding RelativeSource="{RelativeSource AncestorType=ListBox}"/>
++                                                                    </MultiBinding>
++                                                                </TextBlock.Text>
++                                                            </TextBlock>
+                                                         </StackPanel>
+ 
+-                                                        <ComboBox Grid.Column="1" Height="24" VerticalAlignment="Center"
++                                                        <ComboBox Grid.Column="1" Height="26" VerticalAlignment="Center"
++                                                                  Padding="6,0" VerticalContentAlignment="Center"
+                                                                   ItemsSource="{Binding RelativeSource={RelativeSource AncestorType=Window}, Path=AllTypicalTargets}"
+                                                                   DisplayMemberPath="Name"
+                                                                   SelectedValuePath="Name"
+@@ -586,7 +675,9 @@
+ 
+                                                         <TextBlock Grid.Column="2" Text="{Binding Type}" Foreground="#94A3B8" VerticalAlignment="Center" Margin="10,0,0,0"/>
+ 
+-                                                        <Button Grid.Column="3" Content="≡ƒùæ∩╕Å" Style="{StaticResource RowActionBtn}" Click="BtnDeleteInstance_Click" HorizontalAlignment="Center"/>
++                                                        <Button Grid.Column="3" Style="{StaticResource RowActionBtn}" Click="BtnDeleteInstance_Click" HorizontalAlignment="Center">
++                                                            <ui:SymbolIcon Symbol="Delete"/>
++                                                        </Button>
+                                                     </Grid>
+                                                 </DataTemplate>
+                                             </ListBox.ItemTemplate>
+@@ -598,12 +689,7 @@
+                             </Expander>
+ 
+                             <!-- ACCORDION 4: CONFIGURATION VARIABLES -->
+-                            <Expander x:Name="ExpVariables" IsExpanded="True" HeaderTemplate="{x:Null}">
+-                                <Expander.Header>
+-                                    <Grid HorizontalAlignment="{Binding Path=HorizontalAlignment, RelativeSource={RelativeSource AncestorType=ContentPresenter}, Mode=OneWayToSource}">
+-                                        <TextBlock x:Name="TxtHeaderVariables" Text="Configuration variables (0)" Foreground="White" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"/>
+-                                    </Grid>
+-                                </Expander.Header>
++                            <Expander x:Name="ExpVariables" IsExpanded="True" Header="Configuration variables (0)">
+                                 <StackPanel Margin="10,5">
+                                     <Grid Margin="0,0,0,10">
+                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+@@ -639,25 +725,42 @@
+ 
+                                         <ListBox x:Name="ItrVariables" Background="Transparent" BorderBrush="#333" BorderThickness="1" MinHeight="100"
+                                                  ItemContainerStyle="{StaticResource GridRowListItem}"
+-                                                 SelectionChanged="ItrVariables_SelectionChanged">
++                                                 SelectionChanged="ItrVariables_SelectionChanged"
++                                                 PreviewMouseMove="General_PreviewMouseMove"
++                                                 PreviewMouseLeftButtonUp="General_PreviewMouseLeftButtonUp"
++                                                 LostMouseCapture="General_LostMouseCapture">
+                                             <ListBox.ItemTemplate>
+                                                 <DataTemplate>
+                                                     <Grid>
+                                                         <Grid.ColumnDefinitions>
+-                                                            <ColumnDefinition Width="40"/>
++                                                            <ColumnDefinition Width="45"/>
+                                                             <ColumnDefinition Width="3*"/>
+                                                             <ColumnDefinition Width="3*"/>
+                                                             <ColumnDefinition Width="2*"/>
+                                                             <ColumnDefinition Width="80"/>
+                                                         </Grid.ColumnDefinitions>
+                                                         <StackPanel Orientation="Horizontal" Grid.Column="0" VerticalAlignment="Center">
+-                                                            <TextBlock Text="::" Foreground="{StaticResource TextMuted}" Margin="0,0,5,0"/>
+-                                                            <TextBlock Text="0" Foreground="{StaticResource TextMuted}"/>
++                                                            <Border Background="Transparent" Cursor="SizeAll" Margin="0,0,8,0" Padding="4" Width="20" Height="24"
++                                                                    PreviewMouseLeftButtonDown="DragGrip_PreviewMouseLeftButtonDown">
++                                                                <Path Data="M4,6A1,1 0 1,1 2,6A1,1 0 1,1 4,6 M4,12A1,1 0 1,1 2,12A1,1 0 1,1 4,12 M4,18A1,1 0 1,1 2,18A1,1 0 1,1 4,18 M10,6A1,1 0 1,1 8,6A1,1 0 1,1 10,6 M10,12A1,1 0 1,1 8,12A1,1 0 1,1 10,12 M10,18A1,1 0 1,1 8,18A1,1 0 1,1 10,18" 
++                                                                      Fill="#94A3B8" Width="10" Height="15" Stretch="Uniform"
++                                                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
++                                                            </Border>
++                                                            <TextBlock VerticalAlignment="Center" Foreground="{StaticResource TextMuted}">
++                                                                <TextBlock.Text>
++                                                                    <MultiBinding Converter="{StaticResource RowIndexConverter}">
++                                                                        <Binding/>
++                                                                        <Binding RelativeSource="{RelativeSource AncestorType=ListBox}"/>
++                                                                    </MultiBinding>
++                                                                </TextBlock.Text>
++                                                            </TextBlock>
+                                                         </StackPanel>
+                                                         <TextBlock Grid.Column="1" Text="{Binding Name}" Foreground="White" VerticalAlignment="Center"/>
+                                                         <TextBlock Grid.Column="2" Text="{Binding Type}" Foreground="#94A3B8" VerticalAlignment="Center"/>
+                                                         <TextBlock Grid.Column="3" Text="{Binding IsMandatory}" Foreground="White" VerticalAlignment="Center"/>
+-                                                        <Button Grid.Column="4" Content="≡ƒùæ∩╕Å" Style="{StaticResource RowActionBtn}" Click="BtnDeleteVariable_Click" HorizontalAlignment="Center"/>
++                                                        <Button Grid.Column="4" Style="{StaticResource RowActionBtn}" Click="BtnDeleteVariable_Click" HorizontalAlignment="Center">
++                                                            <ui:SymbolIcon Symbol="Delete"/>
++                                                        </Button>
+                                                     </Grid>
+                                                 </DataTemplate>
+                                             </ListBox.ItemTemplate>
+@@ -677,12 +780,7 @@
+                                         <TextBox x:Name="TxtConfigDescription" Background="#222" BorderBrush="#333" Foreground="White" TextWrapping="Wrap" AcceptsReturn="True" Height="60" LostFocus="TxtConfigDescription_LostFocus"/>
+                                     </StackPanel>
+                                 </Border>
+-                                <Expander x:Name="ExpConfigGroups" IsExpanded="True" HeaderTemplate="{x:Null}">
+-                                    <Expander.Header>
+-                                        <Grid HorizontalAlignment="{Binding Path=HorizontalAlignment, RelativeSource={RelativeSource AncestorType=ContentPresenter}, Mode=OneWayToSource}">
+-                                            <TextBlock x:Name="TxtHeaderConfigGroups" Text="Associated Rule Groups (0)" Foreground="White" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"/>
+-                                        </Grid>
+-                                    </Expander.Header>
++                                <Expander x:Name="ExpConfigGroups" IsExpanded="True" Header="Associated Rule Groups (0)">
+                                     <StackPanel Margin="10,5">
+                                          <!-- Config Groups Table Headers -->
+                                          <Border Background="#2A2A2A" BorderBrush="#333" BorderThickness="1,1,1,0" Padding="10,8">
+@@ -713,19 +811,33 @@
+                                                      <DataTemplate>
+                                                          <Grid>
+                                                              <Grid.ColumnDefinitions>
+-                                                                 <ColumnDefinition Width="40"/>
++                                                                 <ColumnDefinition Width="45"/>
+                                                                  <ColumnDefinition Width="*"/>
+                                                                  <ColumnDefinition Width="80"/>
+                                                              </Grid.ColumnDefinitions>
+ 
+                                                              <StackPanel Orientation="Horizontal" Grid.Column="0" VerticalAlignment="Center">
+-                                                                 <TextBlock Text="::" Foreground="{StaticResource TextMuted}" Margin="0,0,5,0"/>
+-                                                                 <TextBlock Text="0" Foreground="{StaticResource TextMuted}"/>
++                                                                <Border Background="Transparent" Cursor="SizeAll" Margin="0,0,8,0" Padding="4" Width="20" Height="24"
++                                                                        PreviewMouseLeftButtonDown="DragGrip_PreviewMouseLeftButtonDown">
++                                                                    <Path Data="M4,6A1,1 0 1,1 2,6A1,1 0 1,1 4,6 M4,12A1,1 0 1,1 2,12A1,1 0 1,1 4,12 M4,18A1,1 0 1,1 2,18A1,1 0 1,1 4,18 M10,6A1,1 0 1,1 8,6A1,1 0 1,1 10,6 M10,12A1,1 0 1,1 8,12A1,1 0 1,1 10,12 M10,18A1,1 0 1,1 8,18A1,1 0 1,1 10,18" 
++                                                                          Fill="#94A3B8" Width="10" Height="15" Stretch="Uniform"
++                                                                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
++                                                                </Border>
++                                                                <TextBlock VerticalAlignment="Center" Foreground="{StaticResource TextMuted}">
++                                                                    <TextBlock.Text>
++                                                                        <MultiBinding Converter="{StaticResource RowIndexConverter}">
++                                                                            <Binding/>
++                                                                            <Binding RelativeSource="{RelativeSource AncestorType=ListBox}"/>
++                                                                        </MultiBinding>
++                                                                    </TextBlock.Text>
++                                                                </TextBlock>
+                                                              </StackPanel>
+ 
+                                                              <TextBlock Grid.Column="1" Text="{Binding}" Foreground="White" VerticalAlignment="Center"/>
+ 
+-                                                             <Button Grid.Column="2" Content="≡ƒùæ∩╕Å" Style="{StaticResource RowActionBtn}" Click="BtnDeleteConfigGroup_Click" HorizontalAlignment="Center"/>
++                                                             <Button Grid.Column="2" Style="{StaticResource RowActionBtn}" Click="BtnDeleteConfigGroup_Click" HorizontalAlignment="Center">
++                                                                 <ui:SymbolIcon Symbol="Delete"/>
++                                                             </Button>
+                                                          </Grid>
+                                                      </DataTemplate>
+                                                  </ListBox.ItemTemplate>
+@@ -762,6 +874,7 @@
+                             </StackPanel>
+                         </Grid>
+                     </Border>
++                    <Canvas x:Name="DragCanvas" Grid.Row="0" Grid.RowSpan="3" IsHitTestVisible="False" Background="Transparent" Panel.ZIndex="100"/>
+                 </Grid>
+             </Grid>
+ 
+@@ -770,21 +883,57 @@
+ 
+             <!-- COLUMN 5: RIGHT DETAILS PANEL -->
+             <Grid Grid.Column="5" Background="#282828" x:Name="PanelRightDetails" SizeChanged="ColDetailsAreaGrid_SizeChanged">
+-                <Grid.RowDefinitions>
+-                    <RowDefinition Height="Auto"/> <!-- Header -->
+-                    <RowDefinition Height="*"/>    <!-- Scrollable Details -->
+-                </Grid.RowDefinitions>
+-
+-                <!-- Header -->
+-                <Border Grid.Row="0" Padding="15,15,15,10" BorderBrush="#2D2D2D" BorderThickness="0,0,0,1" Background="#222">
+-                    <Grid>
+-                        <TextBlock Text="Details" FontSize="13.5" FontWeight="Bold" Foreground="White" VerticalAlignment="Center"/>
+-                        <Button Content="┬╗" HorizontalAlignment="Right" FontSize="14" Foreground="#94A3B8" Style="{StaticResource SidebarIconBtn}" Click="BtnCollapseRight_Click" ToolTip="µèÿσÅáσÅ│Θ¥óµ¥┐"/>
+-                    </Grid>
+-                </Border>
++                <TabControl Background="#282828" BorderThickness="0" Padding="0" x:Name="TabControlRightDetails">
++                    <TabControl.Resources>
++                        <Style TargetType="TabItem">
++                            <Setter Property="HeaderTemplate">
++                                <Setter.Value>
++                                    <DataTemplate>
++                                        <ContentPresenter Content="{TemplateBinding Content}" Margin="10,6"/>
++                                    </DataTemplate>
++                                </Setter.Value>
++                            </Setter>
++                            <Setter Property="Background" Value="Transparent"/>
++                            <Setter Property="Foreground" Value="#94A3B8"/>
++                            <Setter Property="FontWeight" Value="SemiBold"/>
++                            <Setter Property="FontSize" Value="13"/>
++                            <Setter Property="BorderThickness" Value="0"/>
++                            <Setter Property="Template">
++                                <Setter.Value>
++                                    <ControlTemplate TargetType="TabItem">
++                                        <Border x:Name="Border" BorderThickness="0,0,0,2" BorderBrush="Transparent" SnapsToDevicePixels="True" Margin="0,0,10,0">
++                                            <ContentPresenter ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center" HorizontalAlignment="Center"/>
++                                        </Border>
++                                        <ControlTemplate.Triggers>
++                                            <Trigger Property="IsSelected" Value="True">
++                                                <Setter TargetName="Border" Property="BorderBrush" Value="#0084FF"/>
++                                                <Setter Property="Foreground" Value="White"/>
++                                            </Trigger>
++                                            <Trigger Property="IsMouseOver" Value="True">
++                                                <Setter Property="Foreground" Value="White"/>
++                                            </Trigger>
++                                        </ControlTemplate.Triggers>
++                                    </ControlTemplate>
++                                </Setter.Value>
++                            </Setter>
++                        </Style>
++                    </TabControl.Resources>
++
++                    <!-- TAB 1: DETAILS -->
++                    <TabItem Header="Details" x:Name="TabItemDetails">
++                        <Grid>
++                            <Grid.RowDefinitions>
++                                <RowDefinition Height="Auto"/>
++                                <RowDefinition Height="*"/>
++                            </Grid.RowDefinitions>
++                            
++                            <Border Grid.Row="0" Padding="15,15,15,10" BorderBrush="#2D2D2D" BorderThickness="0,0,0,1" Background="#222">
++                                <Grid>
++                                    <TextBlock Text="Details" FontSize="13.5" FontWeight="Bold" Foreground="White" VerticalAlignment="Center"/>
++                                </Grid>
++                            </Border>
+ 
+-                <!-- Scrollable Details Content -->
+-                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
++                            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                     <Grid Margin="15">
+                         <!-- EMPTY STATE DETAILS -->
+                         <TextBlock x:Name="GridDetailsEmpty" Text="µ▓íµ£ëΘÇëΣ╕¡Σ╗╗Σ╜òσàâτ┤á" Foreground="{StaticResource TextMuted}" FontStyle="Italic" HorizontalAlignment="Center" Margin="0,50,0,0"/>
+@@ -804,7 +953,9 @@
+                                         <TextBox x:Name="TxtIsActiveFormula" Background="#1A1A1A" BorderBrush="#333" Foreground="White" Height="26"
+                                                  Text="{Binding IsActiveFormula, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"
+                                                  LostFocus="FormulaTextBox_LostFocus" ToolTip="Φ╛ôσàÑσÉ»τö¿µ¥íΣ╗╢τÜäΘÇ╗Φ╛æσà¼σ╝Å"/>
+-                                        <Button Grid.Column="1" Content="Γ£Å∩╕Å" Style="{StaticResource RowActionBtn}" Click="BtnVariablePicker_Click" Margin="4,0,0,0" ToolTip="ΘÇëµï⌐σÅÿΘçÅ"/>
++                                        <Button Grid.Column="1" Style="{StaticResource RowActionBtn}" Click="BtnVariablePicker_Click" Margin="4,0,0,0" ToolTip="ΘÇëµï⌐σÅÿΘçÅ">
++                                            <ui:SymbolIcon Symbol="Edit"/>
++                                        </Button>
+                                     </Grid>
+                                 </StackPanel>
+                             </Expander>
+@@ -833,20 +984,24 @@
+                                         <Label Grid.Row="0" Grid.Column="0" Content="X coordinate" Foreground="#94A3B8" VerticalAlignment="Center" Margin="0,4,12,4"/>
+                                         <TextBox Grid.Row="0" Grid.Column="1" Background="#1A1A1A" BorderBrush="#333" Foreground="White" Height="26" Margin="0,4"
+                                                  Text="{Binding X, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"/>
+-                                        <Button Grid.Row="0" Grid.Column="2" Content="Γ£Å∩╕Å" Style="{StaticResource RowActionBtn}" Margin="4,4,0,4"/>
++                                        <Button Grid.Row="0" Grid.Column="2" Style="{StaticResource RowActionBtn}" Margin="4,4,0,4">
++                                            <ui:SymbolIcon Symbol="Edit"/>
++                                        </Button>
+ 
+                                         <!-- Y coordinate -->
+                                         <Label Grid.Row="1" Grid.Column="0" Content="Y coordinate" Foreground="#94A3B8" VerticalAlignment="Center" Margin="0,4,12,4"/>
+                                         <TextBox Grid.Row="1" Grid.Column="1" Background="#1A1A1A" BorderBrush="#333" Foreground="White" Height="26" Margin="0,4"
+                                                  Text="{Binding Y, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"/>
+-                                        <Button Grid.Row="1" Grid.Column="2" Content="Γ£Å∩╕Å" Style="{StaticResource RowActionBtn}" Margin="4,4,0,4"/>
++                                        <Button Grid.Row="1" Grid.Column="2" Style="{StaticResource RowActionBtn}" Margin="4,4,0,4">
++                                            <ui:SymbolIcon Symbol="Edit"/>
++                                        </Button>
+ 
+                                         <!-- Sequential -->
+                                         <CheckBox Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Content="Sequential" x:Name="ChkPosSequential" Checked="ChkPosSequential_Checked" Unchecked="ChkPosSequential_Checked" Foreground="White" Margin="0,8,0,4"/>
+ 
+                                         <!-- Direction -->
+                                         <Label Grid.Row="3" Grid.Column="0" Content="Direction" Foreground="#94A3B8" VerticalAlignment="Center" Margin="0,4,12,4"/>
+-                                         <ComboBox Grid.Row="3" Grid.Column="1" Background="#1A1A1A" Foreground="White" BorderBrush="#333" Height="28" Padding="6,2" VerticalContentAlignment="Center" Margin="0,3" SelectedIndex="0">
++                                         <ComboBox Grid.Row="3" Grid.Column="1" Background="#1A1A1A" Foreground="White" BorderBrush="#333" Height="28" Padding="6,0" VerticalContentAlignment="Center" Margin="0,3" SelectedIndex="0">
+                                             <ComboBoxItem Content="To the right"/>
+                                             <ComboBoxItem Content="To the left"/>
+                                             <ComboBoxItem Content="Up"/>
+@@ -856,7 +1011,9 @@
+                                         <!-- Offset -->
+                                         <Label Grid.Row="4" Grid.Column="0" Content="Offset" Foreground="#94A3B8" VerticalAlignment="Center" Margin="0,4,12,4"/>
+                                         <TextBox Grid.Row="4" Grid.Column="1" Background="#1A1A1A" BorderBrush="#333" Foreground="White" Height="26" Margin="0,4" Text="0"/>
+-                                        <Button Grid.Row="4" Grid.Column="2" Content="Γ£Å∩╕Å" Style="{StaticResource RowActionBtn}" Margin="4,4,0,4"/>
++                                        <Button Grid.Row="4" Grid.Column="2" Style="{StaticResource RowActionBtn}" Margin="4,4,0,4">
++                                            <ui:SymbolIcon Symbol="Edit"/>
++                                        </Button>
+                                     </Grid>
+                                 </StackPanel>
+                             </Expander>
+@@ -883,25 +1040,33 @@
+                                         <Label Grid.Row="0" Grid.Column="0" Content="Function designation [-]" Foreground="#94A3B8" VerticalAlignment="Center" Margin="0,4,12,4"/>
+                                         <TextBox Grid.Row="0" Grid.Column="1" Background="#1A1A1A" BorderBrush="#333" Foreground="White" Height="26" Margin="0,4"
+                                                  Text="{Binding StructureMappings[1].Value, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"/>
+-                                        <Button Grid.Row="0" Grid.Column="2" Content="Γ£Å∩╕Å" Style="{StaticResource RowActionBtn}" Margin="4,4,0,4"/>
++                                        <Button Grid.Row="0" Grid.Column="2" Style="{StaticResource RowActionBtn}" Margin="4,4,0,4">
++                                            <ui:SymbolIcon Symbol="Edit"/>
++                                        </Button>
+ 
+                                         <!-- Location designation [+] -->
+                                         <Label Grid.Row="1" Grid.Column="0" Content="Location designation [+]" Foreground="#94A3B8" VerticalAlignment="Center" Margin="0,4,12,4"/>
+                                         <TextBox Grid.Row="1" Grid.Column="1" Background="#1A1A1A" BorderBrush="#333" Foreground="White" Height="26" Margin="0,4"
+                                                  Text="{Binding StructureMappings[2].Value, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"/>
+-                                        <Button Grid.Row="1" Grid.Column="2" Content="Γ£Å∩╕Å" Style="{StaticResource RowActionBtn}" Margin="4,4,0,4"/>
++                                        <Button Grid.Row="1" Grid.Column="2" Style="{StaticResource RowActionBtn}" Margin="4,4,0,4">
++                                            <ui:SymbolIcon Symbol="Edit"/>
++                                        </Button>
+ 
+                                         <!-- Document type [&] -->
+                                         <Label Grid.Row="2" Grid.Column="0" Content="Document type [&amp;]" Foreground="#94A3B8" VerticalAlignment="Center" Margin="0,4,12,4"/>
+                                         <TextBox Grid.Row="2" Grid.Column="1" Background="#1A1A1A" BorderBrush="#333" Foreground="White" Height="26" Margin="0,4"
+                                                  Text="{Binding StructureMappings[3].Value, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"/>
+-                                        <Button Grid.Row="2" Grid.Column="2" Content="Γ£Å∩╕Å" Style="{StaticResource RowActionBtn}" Margin="4,4,0,4"/>
++                                        <Button Grid.Row="2" Grid.Column="2" Style="{StaticResource RowActionBtn}" Margin="4,4,0,4">
++                                            <ui:SymbolIcon Symbol="Edit"/>
++                                        </Button>
+ 
+                                         <!-- Page name -->
+                                         <Label Grid.Row="3" Grid.Column="0" Content="Page name" Foreground="#94A3B8" VerticalAlignment="Center" Margin="0,4,12,4"/>
+                                         <TextBox Grid.Row="3" Grid.Column="1" Background="#1A1A1A" BorderBrush="#333" Foreground="White" Height="26" Margin="0,4"
+                                                  Text="{Binding StructureMappings[4].Value, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"/>
+-                                        <Button Grid.Row="3" Grid.Column="2" Content="Γ£Å∩╕Å" Style="{StaticResource RowActionBtn}" Margin="4,4,0,4"/>
++                                        <Button Grid.Row="3" Grid.Column="2" Style="{StaticResource RowActionBtn}" Margin="4,4,0,4">
++                                            <ui:SymbolIcon Symbol="Edit"/>
++                                        </Button>
+                                     </Grid>
+                                 </StackPanel>
+                             </Expander>
+@@ -932,7 +1097,9 @@
+                                                         <TextBox Grid.Column="0" Background="#1A1A1A" BorderBrush="#333" Foreground="White" Height="26"
+                                                                  Text="{Binding Value, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"
+                                                                  LostFocus="FormulaTextBox_LostFocus"/>
+-                                                        <Button Grid.Column="1" Content="Γ£Å∩╕Å" Style="{StaticResource RowActionBtn}" Click="BtnVariablePicker_Click" Margin="4,0,0,0"/>
++                                                        <Button Grid.Column="1" Style="{StaticResource RowActionBtn}" Click="BtnVariablePicker_Click" Margin="4,0,0,0">
++                                                            <ui:SymbolIcon Symbol="Edit"/>
++                                                        </Button>
+                                                         <Button Grid.Column="2" Content="≡ƒôñ" Style="{StaticResource RowActionBtn}" Margin="4,0,0,0" ToolTip="σà▒Σ║½σÅÿΘçÅ"/>
+                                                     </Grid>
+                                                 </Grid>
+@@ -971,7 +1138,7 @@
+ 
+                                     <!-- Data Type -->
+                                     <Label Content="Data type" Foreground="#94A3B8" Margin="0,0,0,4"/>
+-                                    <ComboBox Background="#1A1A1A" Foreground="White" BorderBrush="#333" Height="28" Margin="0,0,0,12" HorizontalAlignment="Stretch"
++                                    <ComboBox Background="#1A1A1A" Foreground="White" BorderBrush="#333" Height="28" Padding="6,0" VerticalContentAlignment="Center" Margin="0,0,0,12" HorizontalAlignment="Stretch"
+                                               SelectedValue="{Binding Type, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}" SelectedValuePath="Tag">
+                                         <ComboBoxItem Content="Text (string)" Tag="String"/>
+                                         <ComboBoxItem Content="Boolean value (true or false)" Tag="Boolean"/>
+@@ -989,7 +1156,9 @@
+                                         <TextBox Background="#1A1A1A" BorderBrush="#333" Foreground="White" Height="28"
+                                                  Text="{Binding VisibilityFormula, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"
+                                                  LostFocus="FormulaTextBox_LostFocus"/>
+-                                        <Button Grid.Column="1" Content="Γ£Å∩╕Å" Style="{StaticResource RowActionBtn}" Click="BtnVariablePicker_Click" Margin="5,0,0,0"/>
++                                         <Button Grid.Column="1" Style="{StaticResource RowActionBtn}" Click="BtnVariablePicker_Click" Margin="5,0,0,0">
++                                             <ui:SymbolIcon Symbol="Edit"/>
++                                         </Button>
+                                     </Grid>
+ 
+                                     <!-- Selection Values -->
+@@ -1023,7 +1192,9 @@
+                                         <TextBox x:Name="TxtInstanceActiveFormula" Background="#1A1A1A" BorderBrush="#333" Foreground="White" Height="26"
+                                                  Text="{Binding IsActiveFormula, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"
+                                                  LostFocus="FormulaTextBox_LostFocus" ToolTip="Φ╛ôσàÑσ«₧Σ╛ïσÉ»τö¿µ¥íΣ╗╢τÜäΘÇ╗Φ╛æσà¼σ╝Å"/>
+-                                        <Button Grid.Column="1" Content="Γ£Å∩╕Å" Style="{StaticResource RowActionBtn}" Click="BtnVariablePicker_Click" Margin="4,0,0,0" ToolTip="ΘÇëµï⌐σÅÿΘçÅ"/>
++                                        <Button Grid.Column="1" Style="{StaticResource RowActionBtn}" Click="BtnVariablePicker_Click" Margin="4,0,0,0" ToolTip="ΘÇëµï⌐σÅÿΘçÅ">
++                                            <ui:SymbolIcon Symbol="Edit"/>
++                                        </Button>
+                                     </Grid>
+                                 </StackPanel>
+                             </Expander>
+@@ -1049,7 +1220,9 @@
+                                                         <TextBox Grid.Column="0" Background="#1A1A1A" BorderBrush="#333" Foreground="White" Height="26"
+                                                                  Text="{Binding Value, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"
+                                                                  LostFocus="FormulaTextBox_LostFocus"/>
+-                                                        <Button Grid.Column="1" Content="Γ£Å∩╕Å" Style="{StaticResource RowActionBtn}" Click="BtnVariablePicker_Click" Margin="4,0,0,0"/>
++                                                         <Button Grid.Column="1" Style="{StaticResource RowActionBtn}" Click="BtnVariablePicker_Click" Margin="4,0,0,0">
++                                                             <ui:SymbolIcon Symbol="Edit"/>
++                                                         </Button>
+                                                     </Grid>
+                                                 </Grid>
+                                             </DataTemplate>
+@@ -1058,9 +1231,64 @@
+                                 </StackPanel>
+                             </Expander>
+                         </StackPanel>
++                            </Grid>
++                        </ScrollViewer>
+                     </Grid>
+-                </ScrollViewer>
+-            </Grid>
++                </TabItem>
++
++                <!-- TAB 2: MACRO GRAPHIC PREVIEW -->
++                <TabItem Header="Preview" x:Name="TabItemPreview">
++                    <Grid>
++                        <Grid.RowDefinitions>
++                            <RowDefinition Height="Auto"/>
++                            <RowDefinition Height="*"/>
++                        </Grid.RowDefinitions>
++                        
++                        <Border Grid.Row="0" Padding="15,15,15,10" BorderBrush="#2D2D2D" BorderThickness="0,0,0,1" Background="#222">
++                            <Grid>
++                                <TextBlock Text="Macro Graphic Preview" FontSize="13.5" FontWeight="Bold" Foreground="White" VerticalAlignment="Center"/>
++                            </Grid>
++                        </Border>
++
++                        <Grid Grid.Row="1" Margin="15">
++                            <!-- EMPTY STATE PREVIEW -->
++                            <TextBlock x:Name="TxtPreviewEmpty" Text="µ£¬ΘÇëµï⌐ΘóäΦºêτÜäσÅÿΣ╜ô" Foreground="{StaticResource TextMuted}" FontStyle="Italic" HorizontalAlignment="Center" Margin="0,50,0,0" VerticalAlignment="Top"/>
++
++                            <Grid x:Name="GridPreviewContent" Visibility="Collapsed">
++                                <Grid.RowDefinitions>
++                                    <RowDefinition Height="*"/>
++                                    <RowDefinition Height="Auto"/>
++                                </Grid.RowDefinitions>
++
++                                <!-- Graphic Display -->
++                                <Border Grid.Row="0" Background="#1A1A1A" BorderBrush="#333" BorderThickness="1" CornerRadius="4" Padding="10">
++                                    <Grid>
++                                        <Image x:Name="ImgMacroPreview" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center"/>
++
++                                        <!-- Fallback placeholder when image is missing -->
++                                        <StackPanel x:Name="PanelPreviewPlaceholder" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="10">
++                                            <TextBlock Text="≡ƒû╝∩╕Å" FontSize="40" HorizontalAlignment="Center" Margin="0,0,0,10"/>
++                                            <TextBlock x:Name="TxtPreviewTitle" Text="σ«Åσ¢╛σ╜óΘóäΦºê" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"/>
++                                            <TextBlock x:Name="TxtPreviewInfo" Text="Variant A" Foreground="{StaticResource TextMuted}" FontSize="12" Margin="0,5,0,0" HorizontalAlignment="Center"/>
++                                            <TextBlock Text="σªéΘ£Çσ£¿µ¡ñσñäµÿ╛τñ║τ£ƒσ«₧σ¢╛τ║╕ΘóäΦºê∩╝îΦ»╖σ£¿ EPLAN Σ╕¡σ░åΦ»Ñσ«ÅΣ╗Ñτ¢╕σÉîτÜäµûçΣ╗╢σÉìσ»╝σç║Σ╕║ PNG/BMP µá╝σ╝Åσ¢╛τëçσ¡ÿµö╛σ£¿σÉîτ║ºτ¢«σ╜òΣ╕ïπÇé" 
++                                                       Foreground="{StaticResource TextMuted}" FontSize="10.5" Margin="0,15,0,0" TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center"/>
++                                        </StackPanel>
++                                    </Grid>
++                                </Border>
++
++                                <!-- Details info below -->
++                                <StackPanel Grid.Row="1" Margin="0,10,0,0">
++                                    <TextBlock x:Name="TxtPreviewPath" Text="Φ╖»σ╛ä: " Foreground="#94A3B8" FontSize="11.5" TextWrapping="Wrap"/>
++                                </StackPanel>
++                            </Grid>
++                        </Grid>
++                    </Grid>
++                </TabItem>
++            </TabControl>
++
++            <!-- Floating Right-aligned Panel Collapse Button next to Tab Items -->
++            <Button Content="┬╗" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,8,12,0" FontSize="14" Foreground="#94A3B8" Style="{StaticResource SidebarIconBtn}" Click="BtnCollapseRight_Click" ToolTip="µèÿσÅáσÅ│Θ¥óµ¥┐" Panel.ZIndex="10"/>
++        </Grid>
+         </Grid>
+ 
+         <!-- ==================== TOAST NOTIFICATION OVERLAY ==================== -->
+@@ -1156,12 +1384,14 @@
+                         </Grid.RowDefinitions>
+ 
+                         <!-- Filter ComboBox -->
+-                        <Label Content="Filter Typicals" Foreground="#94A3B8" FontSize="11.5" Margin="0,0,0,4"/>
+-                        <ComboBox x:Name="CboModalAddFilter" Grid.Row="0" SelectedIndex="0" Background="#1A1A1A" Foreground="White" BorderBrush="#333" Height="28" Margin="0,0,0,10" SelectionChanged="CboModalAddFilter_SelectionChanged">
+-                            <ComboBoxItem Content="All"/>
+-                            <ComboBoxItem Content="Macro Typicals"/>
+-                            <ComboBoxItem Content="Typical Groups"/>
+-                        </ComboBox>
++                        <StackPanel Grid.Row="0" Margin="0,0,0,10">
++                            <Label Content="Filter Typicals" Foreground="#94A3B8" FontSize="11.5" Margin="0,0,0,4" Padding="0"/>
++                            <ComboBox x:Name="CboModalAddFilter" SelectedIndex="0" Background="#1A1A1A" Foreground="White" BorderBrush="#333" Height="28" Padding="6,0" VerticalContentAlignment="Center" SelectionChanged="CboModalAddFilter_SelectionChanged">
++                                <ComboBoxItem Content="All"/>
++                                <ComboBoxItem Content="Macro Typicals"/>
++                                <ComboBoxItem Content="Typical Groups"/>
++                            </ComboBox>
++                        </StackPanel>
+ 
+                         <!-- Search Box -->
+                         <TextBox x:Name="TxtModalAddSearch" Grid.Row="1" Height="28" Background="#1A1A1A" BorderBrush="#333" Foreground="White"

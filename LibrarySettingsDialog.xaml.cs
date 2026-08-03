@@ -53,6 +53,13 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
             }
         }
 
+        private void BtnVersionHistory_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new VersionHistoryDialog();
+            dlg.Owner = this;
+            dlg.ShowDialog();
+        }
+
         private void BtnSave_Click(object sender, RoutedEventArgs e)
         {
             // Save Unit

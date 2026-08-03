@@ -1,0 +1,3719 @@
+﻿diff --git a/ConfiguratorWindow.xaml.cs b/ConfiguratorWindow.xaml.cs
+index 5b08a62..776fc14 100644
+--- a/ConfiguratorWindow.xaml.cs
++++ b/ConfiguratorWindow.xaml.cs
+@@ -1,4 +1,4 @@
+-∩╗┐using System;
++using System;
+ using System.Collections.Generic;
+ using System.IO;
+ using System.Linq;
+@@ -10,6 +10,7 @@ using Microsoft.Win32;
+ using System.Threading.Tasks;
+ using System.Xml.Linq;
+ using OfficeOpenXml;
++using System.Windows.Media.Imaging;
+ 
+ namespace AutoSchematicConfigurator.EplAddIn.Tool
+ {
+@@ -26,25 +27,36 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
+         private MacroElement _selectedMacroElement = null;
+         private ConfigurationVariable _selectedConfigVariable = null;
+         private System.Windows.Threading.DispatcherTimer _toastTimer;
+-       private List<CheckableAddElement> _allModalAddElements = new List<CheckableAddElement>();
++        private List<CheckableAddElement> _allModalAddElements = new List<CheckableAddElement>();
+ 
+         private bool _isDirty = false;
+         private System.Windows.Threading.DispatcherTimer _saveDebounceTimer;
+         private System.Windows.Threading.DispatcherTimer _searchDebounceTimer;
++        private System.Windows.Threading.DispatcherTimer _macroSearchDebounceTimer;
++        private System.Windows.Threading.DispatcherTimer _modalSearchDebounceTimer;
++        private System.Windows.Threading.DispatcherTimer _builderDebounceTimer;
+ 
+-       public ConfiguratorWindow()
+-       {
+-           InitializeComponent();
+-           ModernWpf.ThemeManager.SetRequestedTheme(this, ModernWpf.ElementTheme.Dark);
+-           InitializeDbPath();
+-           // Defer I/O-heavy init to Loaded so the window appears immediately
+-           this.Loaded += async (s, e) =>
+-           {
+-               await Task.Run(() => LoadDatabase());
+-               RefreshSidebar();
+-               UpdateWorkspaceSelection();
+-           };
+-       }
++        public ConfiguratorWindow()
++        {
++            InitializeComponent();
++            ModernWpf.ThemeManager.SetRequestedTheme(this, ModernWpf.ElementTheme.Dark);
++            InitializeDbPath();
++            // Defer I/O-heavy init to Loaded so the window appears immediately
++            this.Loaded += async (s, e) =>
++            {
++                await Task.Run(() => LoadDatabase());
++                RefreshSidebar();
++                UpdateWorkspaceSelection();
++                try
++                {
++                    await LoadMacrosFromActiveProjectAsync(false);
++                }
++                catch (Exception ex)
++                {
++                    ConfiguratorService.LogDebug($"Error loading macros on load: {ex.Message}");
++                }
++            };
++        }
+ 
+         private void MarkDirty()
+         {
+@@ -69,10 +81,9 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
+             if (_isDirty) { _isDirty = false; FlushSave(); }
+         }
+ 
+-       private void InitializeDbPath()
++        private void InitializeDbPath()
+         {
+-            // Save settings in the project directory for portability
+-            _dbFilePath = Path.Combine(@"c:\Users\62789\source\repos\ASC.EplAddIn.Tool", DbFileName);
++            _dbFilePath = ConfiguratorService.GetDatabasePath();
+         }
+ 
+         // ==================== DATABASE LOAD / SAVE ====================
+@@ -85,7 +96,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
+                     string json = File.ReadAllText(_dbFilePath);
+                     _db = JsonConvert.DeserializeObject<ConfiguratorData>(json);
+                 }
+-                
++
+                 if (_db == null)
+                 {
+                     _db = new ConfiguratorData();
+@@ -96,26 +107,29 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
+                 {
+                     CreateSampleData();
+                 }
++
++                InvalidateTypicalTargetsCache();
+             }
+             catch (Exception ex)
+             {
+-                MessageBox.Show($"├Ñ┼á┬á├¿┬╜┬╜├⌐ΓÇª┬ì├º┬╜┬«├Ñ┬ñ┬▒├¿┬┤┬Ñ: {ex.Message}", "├⌐ΓÇª┬ì├º┬╜┬«├ÑΓäó┬¿├ª┬Å┬É├º┬ñ┬║", MessageBoxButton.OK, MessageBoxImage.Warning);
++                MessageBox.Show($"σèáΦ╜╜Θàìτ╜«σñ▒Φ┤Ñ: {ex.Message}", "Θàìτ╜«σÖ¿µÅÉτñ║", MessageBoxButton.OK, MessageBoxImage.Warning);
+                 _db = new ConfiguratorData();
++                InvalidateTypicalTargetsCache();
+             }
+         }
+ 
+-        private void FlushSave()
++        private async void FlushSave()
+         {
+             try
+             {
+                 string json = JsonConvert.SerializeObject(_db, Formatting.Indented);
+-                File.WriteAllText(_dbFilePath, json);
+-                TxtStatus.Text = $"├Ñ┬╖┬▓├ª╦å┬É├Ñ┼á┼╕├ñ┬┐┬¥├Ñ┬¡╦£├⌐ΓÇª┬ì├º┬╜┬«├Ñ╦å┬░├ª┼ô┬¼├Ñ┼ô┬░├»┬╝┬ü({DateTime.Now:HH:mm:ss})";
++                await Task.Run(() => File.WriteAllText(_dbFilePath, json));
++                TxtStatus.Text = $"σ╖▓µêÉσèƒΣ┐¥σ¡ÿΘàìτ╜«σê░µ£¼σ£░∩╝ü({DateTime.Now:HH:mm:ss})";
+                 TxtStatus.Foreground = Brushes.Green;
+             }
+             catch (Exception ex)
+             {
+-                TxtStatus.Text = $"├ñ┬┐┬¥├Ñ┬¡╦£├⌐ΓÇª┬ì├º┬╜┬«├ÑΓÇí┬║├⌐ΓÇ¥Γäó: {ex.Message}";
++                TxtStatus.Text = $"Σ┐¥σ¡ÿΘàìτ╜«σç║ΘöÖ: {ex.Message}";
+                 TxtStatus.Foreground = Brushes.Red;
+             }
+         }
+@@ -130,7 +144,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
+             typical.Variables.Add(new ConfigurationVariable
+             {
+                 Name = "MCCB_Current_Value",
+-                DisplayName = "├¿┬«┬╛├Ñ┬«┼í├Ñ┬íΓÇÿ├Ñ┬ú┬│├ªΓÇô┬¡├¿┬╖┬»├ÑΓäó┬¿├ºΓÇ¥┬╡├ª┬╡┬ü├ÑΓé¼┬╝",
++                DisplayName = "Φ«╛σ«Üσíæσú│µû¡Φ╖»σÖ¿τö╡µ╡üσÇ╝",
+                 Type = "String",
+                 IsMandatory = true,
+                 PredefinedValues = new List<string> { "160A", "250A", "320A", "630A" }
+@@ -138,12 +152,12 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
+             typical.Variables.Add(new ConfigurationVariable
+             {
+                 Name = "MCCB_Pole_Number",
+-                DisplayName = "├¿┬«┬╛├Ñ┬«┼í├Ñ┬íΓÇÿ├Ñ┬ú┬│├ªΓÇô┬¡├¿┬╖┬»├ÑΓäó┬¿├ª┼╛┬ü├ªΓÇó┬░",
++                DisplayName = "Φ«╛σ«Üσíæσú│µû¡Φ╖»σÖ¿µ₧üµò░",
+                 Type = "String",
+                 IsMandatory = true,
+                 PredefinedValues = new List<string> { "3P", "4P" }
+             });
+-            
++
+             var element = new MacroElement
+             {
+                 MacroPath = @"$(MD_MACROS)\Main_Incoming_Basic_Framework_3P.ema",
+@@ -156,26 +170,26 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
+             _db.MacroTypicals.Add(typical);
+ 
+             // 2. Create a TypicalGroup and nest the MacroTypical inside it
+-            var group = new TypicalGroup 
+-            { 
+-                Name = "Main Distribution Cabinet" 
++            var group = new TypicalGroup
++            {
++                Name = "Main Distribution Cabinet"
+             };
+-            group.Variables.Add(new ConfigurationVariable 
+-            { 
+-                Name = "Function_designation", 
+-                DisplayName = "├ÑΓÇ║┬╛├º┬║┬╕├⌐┬½╦£├Ñ┬▒ΓÇÜ├ñ┬╗┬ú├Ñ┬Å┬╖ (==)",
++            group.Variables.Add(new ConfigurationVariable
++            {
++                Name = "Function_designation",
++                DisplayName = "σ¢╛τ║╕Θ½ÿσ▒éΣ╗úσÅ╖ (==)",
+                 Type = "String"
+             });
+-            group.Variables.Add(new ConfigurationVariable 
+-            { 
+-                Name = "Use_Cabinet", 
+-                DisplayName = "├ª╦£┬»├Ñ┬É┬ª├ºΓÇ¥┼╕├ª╦å┬É├⌐ΓÇª┬ì├ºΓÇ¥┬╡├ª┼╕┼ô├ÑΓÇ║┬╛├º┬║┬╕",
++            group.Variables.Add(new ConfigurationVariable
++            {
++                Name = "Use_Cabinet",
++                DisplayName = "µÿ»σÉªτöƒµêÉΘàìτö╡µƒ£σ¢╛τ║╕",
+                 Type = "Boolean"
+             });
+-            group.Variables.Add(new ConfigurationVariable 
+-            { 
+-                Name = "Cabinet_Current", 
+-                DisplayName = "├⌐ΓÇª┬ì├ºΓÇ¥┬╡├ª┼╕┼ô├⌐┬ó┬¥├Ñ┬«┼í├ºΓÇ¥┬╡├ª┬╡┬ü",
++            group.Variables.Add(new ConfigurationVariable
++            {
++                Name = "Cabinet_Current",
++                DisplayName = "Θàìτö╡µƒ£Θó¥σ«Üτö╡µ╡ü",
+                 Type = "String",
+                 VisibilityFormula = "=Use_Cabinet==true",
+                 PredefinedValues = new List<string> { "160A", "250A", "320A", "630A" }
+@@ -195,3268 +209,365 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
+             _db.TypicalGroups.Add(group);
+ 
+             // 3. Create a Configurator and reference the TypicalGroup
+-            var configurator = new Configurator 
+-            { 
+-                Name = "Configurator_P8", 
+-                Description = "├ñ┬╕┬╗├⌐ΓÇª┬ì├ºΓÇ¥┬╡├ª┼╕┼ô├Ñ┼╜┼╕├º┬ÉΓÇá├ÑΓÇ║┬╛├¿ΓÇí┬¬├Ñ┼á┬¿├⌐ΓÇª┬ì├º┬╜┬«├⌐┬í┬╣├ºΓÇ║┬«" 
++            var configurator = new Configurator
++            {
++                Name = "Configurator_P8",
++                Description = "Σ╕╗Θàìτö╡µƒ£σÄƒτÉåσ¢╛Φç¬σè¿Θàìτ╜«Θí╣τ¢«"
+             };
+             configurator.TypicalGroupRefs.Add("Main Distribution Cabinet");
+             _db.Configurators.Add(configurator);
+         }
+ 
+-        // ==================== SIDEBAR UI LOGIC ====================
+-        private void RefreshSidebar()
+-        {
+-            if (LstSidebarItems == null || TxtSearch == null) return;
+-
+-            string searchTxt = TxtSearch.Text.Trim().ToLower();
+-            LstSidebarItems.SelectionChanged -= LstSidebarItems_SelectionChanged;
++        // ==================== HIGH-FIDELITY DRAG & DROP REORDERING LOGIC ====================
++        private object _draggedItem = null;
++        private ItemsControl _activeItemsControl = null;
++        private int _dragStartRowIndex = -1;
++        private Point _dragStartPoint;
++        private double _dragStartMouseY;
++        private double _rowHeight;
++        private double _dragStartRowY;
++        private int _currentHoverIndex;
++        private double[] _rowOffsets;
++        private Border _dragFloatingCard = null;
++        private bool _isDraggingActive = false;
++        private bool _isVoluntaryRelease = false;
+ 
+-            int count = 0;
+-            string emptyText = "No Items";
++        private void DragGrip_PreviewMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
++        {
++            var element = sender as DependencyObject;
++            DependencyObject container = null;
++            ItemsControl parentControl = null;
+ 
+-            if (_selectedTab == 0)
+-            {
+-                var list = _db.MacroTypicals.Where(i => string.IsNullOrEmpty(searchTxt) || i.Name.ToLower().Contains(searchTxt)).ToList();
+-                LstSidebarItems.ItemsSource = list;
+-                count = list.Count;
+-                emptyText = "No Macro Typicals";
+-                if (TxtSidebarHeader != null) TxtSidebarHeader.Text = "├Ñ┬«┬Å├¿┬ºΓÇ₧├Ñ╦åΓäó";
+-                if (BtnAddNewItem != null)
+-                {
+-                    BtnAddNewItem.ToolTip = "├ªΓÇô┬░├Ñ┬ó┼╛├Ñ┬«┬Å├¿┬ºΓÇ₧├Ñ╦åΓäó";
+-                    BtnAddNewItem.Visibility = Visibility.Visible;
+-                }
+-            }
+-            else if (_selectedTab == 1)
+-            {
+-                var list = _db.TypicalGroups.Where(i => string.IsNullOrEmpty(searchTxt) || i.Name.ToLower().Contains(searchTxt)).ToList();
+-                LstSidebarItems.ItemsSource = list;
+-                count = list.Count;
+-                emptyText = "No Typical Groups";
+-                if (TxtSidebarHeader != null) TxtSidebarHeader.Text = "├¿┬ºΓÇ₧├Ñ╦åΓäó├º┬╗ΓÇ₧";
+-                if (BtnAddNewItem != null)
+-                {
+-                    BtnAddNewItem.ToolTip = "├ªΓÇô┬░├Ñ┬ó┼╛├¿┬ºΓÇ₧├Ñ╦åΓäó├º┬╗ΓÇ₧";
+-                    BtnAddNewItem.Visibility = Visibility.Visible;
+-                }
+-            }
+-            else if (_selectedTab == 2)
++            while (element != null)
+             {
+-                var list = _db.Configurators.Where(i => string.IsNullOrEmpty(searchTxt) || i.Name.ToLower().Contains(searchTxt)).ToList();
+-                LstSidebarItems.ItemsSource = list;
+-                count = list.Count;
+-                emptyText = "No configurators";
+-                if (TxtSidebarHeader != null) TxtSidebarHeader.Text = "├⌐ΓÇª┬ì├º┬╜┬«├ÑΓäó┬¿";
+-                if (BtnAddNewItem != null)
++                if (element is DataGridRow || element is ListBoxItem)
+                 {
+-                    BtnAddNewItem.ToolTip = "├ªΓÇô┬░├Ñ┬ó┼╛├⌐ΓÇª┬ì├º┬╜┬«├ÑΓäó┬¿";
+-                    BtnAddNewItem.Visibility = Visibility.Visible;
++                    container = element;
+                 }
+-            }
+-            else // _selectedTab == 3 (Project Builder)
+-            {
+-                var list = _db.Configurators.Where(i => string.IsNullOrEmpty(searchTxt) || i.Name.ToLower().Contains(searchTxt)).ToList();
+-                LstSidebarItems.ItemsSource = list;
+-                count = list.Count;
+-                emptyText = "No configurators";
+-                if (TxtSidebarHeader != null) TxtSidebarHeader.Text = "Project Builder";
+-                if (BtnAddNewItem != null)
++                if (element is DataGrid || element is ListBox)
+                 {
+-                    BtnAddNewItem.Visibility = Visibility.Collapsed;
++                    parentControl = element as ItemsControl;
++                    break;
+                 }
++                element = VisualTreeHelper.GetParent(element);
+             }
+ 
+-            if (GridLeftEmptyState != null && TxtLeftEmptyText != null)
++            if (container != null && parentControl != null)
+             {
+-                if (count == 0)
++                var list = parentControl.ItemsSource as System.Collections.IList;
++                if (list == null || list.Count <= 1) return;
++
++                _activeItemsControl = parentControl;
++                if (container is DataGridRow dgr)
+                 {
+-                    GridLeftEmptyState.Visibility = Visibility.Visible;
+-                    TxtLeftEmptyText.Text = emptyText;
++                    _draggedItem = dgr.Item;
+                 }
+                 else
+                 {
+-                    GridLeftEmptyState.Visibility = Visibility.Collapsed;
++                    _draggedItem = (container as FrameworkElement).DataContext;
+                 }
+-            }
+-
+-            LstSidebarItems.SelectionChanged += LstSidebarItems_SelectionChanged;
+-        }
+-
+-        private void Tab_Checked(object sender, RoutedEventArgs e)
+-        {
+-            if (RadTabMacro == null || RadTabGroup == null || RadTabConfig == null || RadTabBuilder == null) return;
+-
+-            if (RadTabMacro.IsChecked == true) _selectedTab = 0;
+-            else if (RadTabGroup.IsChecked == true) _selectedTab = 1;
+-            else if (RadTabConfig.IsChecked == true) _selectedTab = 2;
+-            else if (RadTabBuilder.IsChecked == true) _selectedTab = 3;
+-            else _selectedTab = 0;
+ 
+-            // Auto-expand left selection panel if it is collapsed
+-            if (ColSelectionArea != null && (ColSelectionArea.Width.Value == 0 || ColSelectionArea.ActualWidth <= 10))
+-            {
+-                ColSelectionArea.Width = new GridLength(240);
+-            }
+-
+-            _selectedItem = null;
+-            RefreshSidebar();
+-            UpdateWorkspaceSelection();
+-            UpdateBreadcrumbs();
+-        }
++                _dragStartRowIndex = parentControl.ItemContainerGenerator.IndexFromContainer(container);
++                _dragStartPoint = e.GetPosition(null);
++                _dragStartMouseY = e.GetPosition(DragCanvas).Y;
++                _rowHeight = (container as FrameworkElement).ActualHeight;
++                _currentHoverIndex = _dragStartRowIndex;
++                _rowOffsets = new double[list.Count];
++                _isDraggingActive = false;
+ 
+-        private void TxtSearch_TextChanged(object sender, TextChangedEventArgs e)
+-        {
+-            if (_searchDebounceTimer == null)
+-            {
+-                _searchDebounceTimer = new System.Windows.Threading.DispatcherTimer();
+-                _searchDebounceTimer.Interval = TimeSpan.FromMilliseconds(200);
+-                _searchDebounceTimer.Tick += (_, __) =>
++                // Handle selection
++                if (container is DataGridRow)
+                 {
+-                    _searchDebounceTimer.Stop();
+-                    RefreshSidebar();
+-                };
+-            }
+-            _searchDebounceTimer.Stop();
+-            _searchDebounceTimer.Start();
+-        }
+-
+-        private void LstSidebarItems_SelectionChanged(object sender, SelectionChangedEventArgs e)
+-        {
+-            _selectedItem = LstSidebarItems.SelectedItem;
+-            UpdateWorkspaceSelection();
+-        }
+-
+-        private void BtnAddNewItem_Click(object sender, RoutedEventArgs e)
+-        {
+-            if (ModalCreateItem == null || TxtModalCreateTitle == null || TxtModalCreateName == null) return;
+-
+-            string title = "Create Item";
+-            string defaultPrefix = "";
++                    ((DataGridRow)container).IsSelected = true;
++                }
++                else if (container is ListBoxItem)
++                {
++                    ((ListBoxItem)container).IsSelected = true;
++                }
+ 
+-            if (_selectedTab == 0)
+-            {
+-                title = "Create Macro Typical";
+-                defaultPrefix = "MT_";
+-            }
+-            else if (_selectedTab == 1)
+-            {
+-                title = "Create Typical Group";
+-                defaultPrefix = "TG_";
+-            }
+-            else if (_selectedTab == 2)
+-            {
+-                title = "Create configurator";
+-                defaultPrefix = ""; // default to empty
+-            }
+-            else
+-            {
+-                return; // Tab 3 is Project Builder, we don't add new items
++                e.Handled = true;
+             }
+-
+-            TxtModalCreateTitle.Text = title;
+-            TxtModalCreateName.Text = defaultPrefix;
+-            ModalCreateItem.Visibility = Visibility.Visible;
+-            TxtModalCreateName.Focus();
+-            TxtModalCreateName.SelectionStart = defaultPrefix.Length;
+-
+-            // Trigger TextChanged to validate confirm button state
+-            TxtModalCreateName_TextChanged(null, null);
+         }
+ 
+-        // ==================== WORKSPACE UI LOGIC ====================
+-        private void UpdateWorkspaceSelection()
++        private void General_PreviewMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+         {
+-            _selectedMacroElement = null;
+-            _selectedConfigVariable = null;
+-            if (ItrElements != null) ItrElements.SelectedItem = null;
+-            if (ItrVariables != null) ItrVariables.SelectedItem = null;
+-            if (GridDetailsEmpty != null) GridDetailsEmpty.Visibility = Visibility.Visible;
+-            if (GridMacroDetails != null) GridMacroDetails.Visibility = Visibility.Collapsed;
+-            if (GridVariableDetails != null) GridVariableDetails.Visibility = Visibility.Collapsed;
+-
+-            if (_selectedItem == null)
+-            {
+-                GridLanding.Visibility = Visibility.Visible;
+-                UpdateBreadcrumbs();
+-                return;
+-            }
++            if (_draggedItem == null || _activeItemsControl == null) return;
+ 
+-            GridLanding.Visibility = Visibility.Collapsed;
+-            TxtSelectedName.LostFocus -= TxtSelectedName_LostFocus;
++            Point currentPosition = e.GetPosition(null);
++            Vector diff = _dragStartPoint - currentPosition;
+ 
+-            // Reset visibility of all major workspace panels
+-            ExpVariables.Visibility = Visibility.Collapsed;
+-            ExpElements.Visibility = Visibility.Collapsed;
+-            ExpInstances.Visibility = Visibility.Collapsed;
+-            GridConfiguratorDetails.Visibility = Visibility.Collapsed;
+-            GridProjectBuilderForm.Visibility = Visibility.Collapsed;
++            var list = _activeItemsControl.ItemsSource as System.Collections.IList;
++            if (list == null) return;
+ 
+-            // Rename control state
+-            TxtSelectedName.IsReadOnly = false;
+-
+-            if (_selectedTab == 0 && _selectedItem is MacroTypical typical)
+-            {
+-                TxtSelectedName.Text = typical.Name;
+-                ExpVariables.Visibility = Visibility.Visible;
+-                ExpElements.Visibility = Visibility.Visible;
+-                
+-                BindVariablesList(typical.Variables);
+-                BindElementsList(typical.Elements);
+-            }
+-            else if (_selectedTab == 1 && _selectedItem is TypicalGroup group)
+-            {
+-                TxtSelectedName.Text = group.Name;
+-                ExpVariables.Visibility = Visibility.Visible;
+-                ExpInstances.Visibility = Visibility.Visible;
+-                
+-                BindVariablesList(group.Variables);
+-                BindInstancesList(group.Instances);
+-            }
+-            else if (_selectedTab == 2 && _selectedItem is Configurator config)
+-            {
+-                TxtSelectedName.Text = config.Name;
+-                GridConfiguratorDetails.Visibility = Visibility.Visible;
+-                
+-                TxtConfigDescription.Text = config.Description;
+-                BindConfigGroupsList(config);
+-            }
+-            else if (_selectedTab == 3 && _selectedItem is Configurator runConfig)
++            if (!_isDraggingActive)
+             {
+-                TxtSelectedName.Text = runConfig.Name;
+-                TxtSelectedName.IsReadOnly = true;
+-                GridProjectBuilderForm.Visibility = Visibility.Visible;
+-                
+-                RenderProjectBuilderForm(runConfig);
+-            }
+-
+-            TxtSelectedName.LostFocus += TxtSelectedName_LostFocus;
+-            UpdateBreadcrumbs();
+-        }
+-
+-        private void TxtSelectedName_LostFocus(object sender, RoutedEventArgs e)
+-        {
+-            string newName = TxtSelectedName.Text.Trim();
+-            if (string.IsNullOrEmpty(newName)) return;
+-
+-            if (_selectedItem is MacroTypical typical) typical.Name = newName;
+-            else if (_selectedItem is TypicalGroup group) group.Name = newName;
+-            else if (_selectedItem is Configurator config) config.Name = newName;
+-
+-            RefreshSidebar();
+-        }
++                if (Math.Abs(diff.X) > SystemParameters.MinimumHorizontalDragDistance ||
++                    Math.Abs(diff.Y) > SystemParameters.MinimumVerticalDragDistance)
++                {
++                    _isDraggingActive = true;
++                    _activeItemsControl.CaptureMouse();
+ 
+-        private void BtnCopySidebarItem_Click(object sender, RoutedEventArgs e)
+-        {
+-            var btn = sender as Button;
+-            if (btn == null) return;
++                    var originalRow = _activeItemsControl.ItemContainerGenerator.ContainerFromIndex(_dragStartRowIndex) as FrameworkElement;
++                    if (originalRow != null)
++                    {
++                        RenderTargetBitmap bmp = new RenderTargetBitmap((int)originalRow.ActualWidth, (int)originalRow.ActualHeight, 96, 96, PixelFormats.Pbgra32);
++                        bmp.Render(originalRow);
++                        ImageBrush brush = new ImageBrush(bmp);
+ 
+-            object item = btn.DataContext;
+-            if (item == null) return;
++                        originalRow.Tag = "Placeholder";
+ 
+-            object copiedItem = null;
++                        _dragFloatingCard = new Border
++                        {
++                            Width = originalRow.ActualWidth,
++                            Height = originalRow.ActualHeight,
++                            Background = brush,
++                            BorderBrush = new SolidColorBrush(Color.FromRgb(0, 132, 255)),
++                            BorderThickness = new Thickness(1),
++                            CornerRadius = new CornerRadius(4),
++                            RenderTransform = new TranslateTransform(),
++                            Effect = new System.Windows.Media.Effects.DropShadowEffect
++                            {
++                                Color = Colors.Black,
++                                Direction = 315,
++                                ShadowDepth = 8,
++                                BlurRadius = 15,
++                                Opacity = 0.6
++                            }
++                        };
+ 
+-            if (item is MacroTypical typical)
+-            {
+-                string json = JsonConvert.SerializeObject(typical);
+-                var copy = JsonConvert.DeserializeObject<MacroTypical>(json);
+-                copy.Name = GetUniqueCopyName(typical.Name, _db.MacroTypicals.Select(x => x.Name));
+-                _db.MacroTypicals.Add(copy);
+-                copiedItem = copy;
+-            }
+-            else if (item is TypicalGroup group)
+-            {
+-                string json = JsonConvert.SerializeObject(group);
+-                var copy = JsonConvert.DeserializeObject<TypicalGroup>(json);
+-                copy.Name = GetUniqueCopyName(group.Name, _db.TypicalGroups.Select(x => x.Name));
+-                _db.TypicalGroups.Add(copy);
+-                copiedItem = copy;
+-            }
+-            else if (item is Configurator config)
+-            {
+-                string json = JsonConvert.SerializeObject(config);
+-                var copy = JsonConvert.DeserializeObject<Configurator>(json);
+-                copy.Name = GetUniqueCopyName(config.Name, _db.Configurators.Select(x => x.Name));
+-                _db.Configurators.Add(copy);
+-                copiedItem = copy;
+-            }
++                        DragCanvas.Children.Clear();
++                        DragCanvas.Children.Add(_dragFloatingCard);
++                        Canvas.SetLeft(_dragFloatingCard, 0);
+ 
+-            if (copiedItem != null)
+-            {
+-                _selectedItem = copiedItem;
+-                RefreshSidebar();
+-                LstSidebarItems.SelectedItem = _selectedItem;
+-                UpdateWorkspaceSelection();
+-                MarkDirty();
++                        _dragStartRowY = originalRow.TranslatePoint(new Point(0, 0), DragCanvas).Y;
++                        Canvas.SetTop(_dragFloatingCard, _dragStartRowY);
++                    }
++                }
+             }
+-        }
+ 
+-        private string GetUniqueCopyName(string baseName, IEnumerable<string> existingNames)
+-        {
+-            string newName = baseName + "_Copy";
+-            var set = new HashSet<string>(existingNames, StringComparer.OrdinalIgnoreCase);
+-            if (!set.Contains(newName))
+-            {
+-                return newName;
+-            }
+-            int counter = 1;
+-            while (set.Contains($"{newName}_{counter}"))
++            if (_isDraggingActive && _dragFloatingCard != null)
+             {
+-                counter++;
+-            }
+-            return $"{newName}_{counter}";
+-        }
+-
+-        private void BtnDeleteSidebarItem_Click(object sender, RoutedEventArgs e)
+-        {
+-            var btn = sender as Button;
+-            if (btn == null) return;
+-
+-            object item = btn.DataContext;
+-            if (item == null) return;
++                double currentMouseY = e.GetPosition(DragCanvas).Y;
++                double deltaY = currentMouseY - _dragStartMouseY;
+ 
+-            string itemName = "";
+-            if (item is MacroTypical t) itemName = t.Name;
+-            else if (item is TypicalGroup g) itemName = g.Name;
+-            else if (item is Configurator c) itemName = c.Name;
++                double top = _dragStartRowY + deltaY;
++                double minTop = _activeItemsControl.TranslatePoint(new Point(0, 0), DragCanvas).Y;
++                double maxTop = minTop + _activeItemsControl.ActualHeight - _rowHeight;
++                top = Math.Max(minTop, Math.Min(maxTop, top));
++                Canvas.SetTop(_dragFloatingCard, top);
+ 
+-            ShowDeleteConfirmation("├º┬í┬«├¿┬«┬ñ├Ñ╦å┬á├⌐Γäó┬ñ", $"├ªΓÇÜ┬¿├º┬í┬«├Ñ┬«┼í├¿┬ª┬ü├Ñ╦å┬á├⌐Γäó┬ñ├⌐┬í┬╣ '{itemName}' ├Ñ┬ÉΓÇö├»┬╝┼╕", () =>
+-            {
+-                bool wasSelected = (_selectedItem == item);
++                int hoverIndex = _dragStartRowIndex + (int)Math.Round((top - _dragStartRowY) / _rowHeight);
++                hoverIndex = Math.Max(0, Math.Min(list.Count - 1, hoverIndex));
+ 
+-                if (item is MacroTypical typical) _db.MacroTypicals.Remove(typical);
+-                else if (item is TypicalGroup group) _db.TypicalGroups.Remove(group);
+-                else if (item is Configurator config) _db.Configurators.Remove(config);
++                _currentHoverIndex = hoverIndex;
+ 
+-                if (wasSelected)
++                // Animate placeholder row to target offset
++                double placeholderOffset = (hoverIndex - _dragStartRowIndex) * _rowHeight;
++                var startRow = _activeItemsControl.ItemContainerGenerator.ContainerFromIndex(_dragStartRowIndex) as FrameworkElement;
++                if (startRow != null)
+                 {
+-                    _selectedItem = null;
++                    if (Math.Abs(_rowOffsets[_dragStartRowIndex] - placeholderOffset) > 0.01)
++                    {
++                        _rowOffsets[_dragStartRowIndex] = placeholderOffset;
++                        AnimateRowToOffset(startRow, placeholderOffset);
++                    }
+                 }
+ 
+-                RefreshSidebar();
+-                if (!wasSelected && _selectedItem != null)
++                for (int i = 0; i < list.Count; i++)
+                 {
+-                    LstSidebarItems.SelectedItem = _selectedItem;
+-                }
+-                else
+-                {
+-                    UpdateWorkspaceSelection();
+-                }
+-                MarkDirty();
+-            });
+-        }
+-
+-        private void BtnDeleteItem_Click(object sender, RoutedEventArgs e)
+-        {
+-            if (_selectedItem == null) return;
+-
+-            ShowDeleteConfirmation("├º┬í┬«├¿┬«┬ñ├Ñ╦å┬á├⌐Γäó┬ñ", "├ªΓÇÜ┬¿├º┬í┬«├Ñ┬«┼í├¿┬ª┬ü├Ñ╦å┬á├⌐Γäó┬ñ├ª┬¡┬ñ├⌐┬í┬╣├ºΓÇ║┬«├Ñ┬ÉΓÇö├»┬╝┼╕", () =>
+-            {
+-                if (_selectedItem is MacroTypical typical) _db.MacroTypicals.Remove(typical);
+-                else if (_selectedItem is TypicalGroup group) _db.TypicalGroups.Remove(group);
+-                else if (_selectedItem is Configurator config) _db.Configurators.Remove(config);
+-
+-                _selectedItem = null;
+-                RefreshSidebar();
+-                UpdateWorkspaceSelection();
+-                MarkDirty();
+-            });
+-        }
+-
+-        // ==================== VARIABLES LOGIC ====================
+-        private void BindVariablesList(List<ConfigurationVariable> list)
+-        {
+-            ItrVariables.ItemsSource = null;
+-            ItrVariables.ItemsSource = list;
+-            if (GridVariablesEmptyState != null)
+-            {
+-                GridVariablesEmptyState.Visibility = (list == null || list.Count == 0) ? Visibility.Visible : Visibility.Collapsed;
+-            }
+-        }
++                    if (i == _dragStartRowIndex) continue;
+ 
+-        private void BtnAddVariable_Click(object sender, RoutedEventArgs e)
+-        {
+-            e.Handled = true;
+-            List<ConfigurationVariable> vars = null;
+-            if (_selectedItem is MacroTypical typical) vars = typical.Variables;
+-            else if (_selectedItem is TypicalGroup group) vars = group.Variables;
++                    double targetOffset = 0;
++                    if (_dragStartRowIndex < hoverIndex)
++                    {
++                        if (i > _dragStartRowIndex && i <= hoverIndex)
++                        {
++                            targetOffset = -_rowHeight;
++                        }
++                    }
++                    else if (_dragStartRowIndex > hoverIndex)
++                    {
++                        if (i >= hoverIndex && i < _dragStartRowIndex)
++                        {
++                            targetOffset = _rowHeight;
++                        }
++                    }
+ 
+-            if (vars != null)
+-            {
+-                var newVar = new ConfigurationVariable { Name = "New_Variable_" + (vars.Count + 1), DisplayName = "├ªΓÇô┬░├Ñ┬Å╦£├⌐ΓÇí┬Å" };
+-                vars.Add(newVar);
+-                BindVariablesList(vars);
+-                MarkDirty();
+-                ShowToast($"├Ñ┬╖┬▓├ª╦å┬É├Ñ┼á┼╕├ª┬╖┬╗├Ñ┼á┬á├Ñ┬Å╦£├⌐ΓÇí┬Å '{newVar.Name}'");
++                    if (Math.Abs(_rowOffsets[i] - targetOffset) > 0.01)
++                    {
++                        _rowOffsets[i] = targetOffset;
++                        var row = _activeItemsControl.ItemContainerGenerator.ContainerFromIndex(i) as FrameworkElement;
++                        if (row != null)
++                        {
++                            AnimateRowToOffset(row, targetOffset);
++                        }
++                    }
++                }
+             }
+         }
+ 
+-        private void BtnDeleteVariable_Click(object sender, RoutedEventArgs e)
++        private void General_PreviewMouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+         {
+-            var btn = sender as Button;
+-            if (btn == null) return;
+-            var varItem = btn.DataContext as ConfigurationVariable;
+-            if (varItem == null) return;
++            if (_draggedItem == null || _activeItemsControl == null) return;
+ 
+-            List<ConfigurationVariable> vars = null;
+-            if (_selectedItem is MacroTypical typical) vars = typical.Variables;
+-            else if (_selectedItem is TypicalGroup group) vars = group.Variables;
+-
+-            if (vars != null)
+-            {
+-                ShowDeleteConfirmation("├º┬í┬«├¿┬«┬ñ├Ñ╦å┬á├⌐Γäó┬ñ", $"├º┬í┬«├Ñ┬«┼í├Ñ╦å┬á├⌐Γäó┬ñ├Ñ┬Å╦£├⌐ΓÇí┬Å '{varItem.Name}' ├Ñ┬ÉΓÇö├»┬╝┼╕", () =>
+-                {
+-                    vars.Remove(varItem);
+-                    BindVariablesList(vars);
+-                    MarkDirty();
+-                    ShowToast($"├Ñ┬╖┬▓├Ñ╦å┬á├⌐Γäó┬ñ├Ñ┬Å╦£├⌐ΓÇí┬Å '{varItem.Name}'");
+-                });
+-            }
+-        }
+-
+-        // ==================== ELEMENTS / MACROS LOGIC ====================
+-        private void BindElementsList(List<MacroElement> list)
+-        {
+-            ItrElements.ItemsSource = null;
+-            ItrElements.ItemsSource = list;
+-            if (TxtHeaderElements != null)
+-            {
+-                TxtHeaderElements.Text = $"Macros ({(list?.Count ?? 0)})";
+-            }
+-            if (GridElementsEmptyState != null)
+-            {
+-                GridElementsEmptyState.Visibility = (list == null || list.Count == 0) ? Visibility.Visible : Visibility.Collapsed;
+-            }
+-        }
++            _isVoluntaryRelease = true;
++            _activeItemsControl.ReleaseMouseCapture();
++            _isVoluntaryRelease = false;
+ 
+-        private void BtnAddElement_Click(object sender, RoutedEventArgs e)
+-        {
+-            e.Handled = true;
+-            if (_selectedItem is MacroTypical typical)
++            if (!_isDraggingActive)
+             {
+-                ShowMacroNavigator(isAddingNew: true, target: null);
++                CleanupDragDropState();
++                return;
+             }
+-        }
+-
+-        private void BtnDeleteElement_Click(object sender, RoutedEventArgs e)
+-        {
+-            var btn = sender as Button;
+-            if (btn == null) return;
+-            var elementItem = btn.DataContext as MacroElement;
+-            if (elementItem == null) return;
+ 
+-            if (_selectedItem is MacroTypical typical)
++            var list = _activeItemsControl.ItemsSource as System.Collections.IList;
++            if (list == null)
+             {
+-                ShowDeleteConfirmation("├º┬í┬«├¿┬«┬ñ├Ñ╦å┬á├⌐Γäó┬ñ", "├ªΓÇÜ┬¿├º┬í┬«├Ñ┬«┼í├¿┬ª┬ü├Ñ╦å┬á├⌐Γäó┬ñ├ª┬¡┬ñ├Ñ┬«┬Å├ÑΓÇª╞Æ├º┬┤┬á├Ñ┬ÉΓÇö├»┬╝┼╕", () =>
+-                {
+-                    typical.Elements.Remove(elementItem);
+-                    BindElementsList(typical.Elements);
+-                    MarkDirty();
+-                    ShowToast("├Ñ┬╖┬▓├ª╦å┬É├Ñ┼á┼╕├Ñ╦å┬á├⌐Γäó┬ñ├Ñ┬«┬Å├ªΓÇôΓÇí├ñ┬╗┬╢");
+-                });
++                CleanupDragDropState();
++                return;
+             }
+-        }
+-
+-        private void BtnReplaceElementMacro_Click(object sender, RoutedEventArgs e)
+-        {
+-            var btn = sender as Button;
+-            if (btn == null) return;
+-            var element = btn.DataContext as MacroElement;
+-            if (element == null) return;
+-
+-            ShowMacroNavigator(isAddingNew: false, target: element);
+-        }
+-
+-        private void BtnShowElementPreview_Click(object sender, RoutedEventArgs e)
+-        {
+-            var btn = sender as Button;
+-            if (btn == null) return;
+-            var element = btn.DataContext as MacroElement;
+-            if (element == null) return;
+-
+-            char varChar = (char)('A' + element.VariantIndex);
+-            string msg = $"├ª┬¡┬ú├Ñ┼ô┬¿├ª╦£┬╛├º┬ñ┬║├Ñ┬«┬Å├⌐┬óΓÇ₧├¿┬º╦å:\n\n├¿┬╖┬»├Ñ┬╛ΓÇ₧: {element.MacroPath}\n├Ñ┬Å╦£├ñ┬╜ΓÇ£: Variant {varChar}";
+-            MessageBox.Show(msg, "├ª╦£┬╛├º┬ñ┬║├⌐┬óΓÇ₧├¿┬º╦å", MessageBoxButton.OK, MessageBoxImage.Information);
+-        }
+ 
+-        private void BtnShowElementRefs_Click(object sender, RoutedEventArgs e)
+-        {
+-            var btn = sender as Button;
+-            if (btn == null) return;
+-            var element = btn.DataContext as MacroElement;
+-            if (element == null) return;
++            double targetSnapY = _dragStartRowY + (_currentHoverIndex - _dragStartRowIndex) * _rowHeight;
+ 
+-            if (string.IsNullOrEmpty(element.MacroPath))
++            var snapAnimation = new System.Windows.Media.Animation.DoubleAnimation
+             {
+-                MessageBox.Show("├ª┬¡┬ñ├ÑΓÇª╞Æ├º┬┤┬á├Ñ┬░┼í├ª┼ô┬¬├ª┼ÆΓÇí├Ñ┬«┼í├Ñ┬«┬Å├ªΓÇôΓÇí├ñ┬╗┬╢├¿┬╖┬»├Ñ┬╛ΓÇ₧├úΓé¼ΓÇÜ", "├ª┬Å┬É├º┬ñ┬║", MessageBoxButton.OK, MessageBoxImage.Warning);
+-                return;
+-            }
++                From = Canvas.GetTop(_dragFloatingCard),
++                To = targetSnapY,
++                Duration = TimeSpan.FromMilliseconds(250),
++                EasingFunction = new System.Windows.Media.Animation.QuadraticEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseInOut }
++            };
+ 
+-            var refs = new List<string>();
+-            foreach (var typical in _db.MacroTypicals)
++            snapAnimation.Completed += (s, ev) =>
+             {
+-                if (typical.Elements.Any(el => string.Equals(el.MacroPath, element.MacroPath, StringComparison.OrdinalIgnoreCase)))
+-                {
+-                    refs.Add($"- ├Ñ┬«┬Å├¿┬ºΓÇ₧├Ñ╦åΓäó: {typical.Name}");
+-                }
+-            }
+-
+-            string msg = refs.Count > 0 
+-                ? $"├Ñ┬«┬Å├ªΓÇôΓÇí├ñ┬╗┬╢ \"{element.MacroPath}\" ├¿┬ó┬½├ñ┬╗┬Ñ├ñ┬╕ΓÇ╣├⌐┬í┬╣├ºΓÇ║┬«├Ñ┬ÅΓÇÜ├¿Γé¼╞Æ:\n\n{string.Join("\n", refs)}"
+-                : $"├Ñ┬«┬Å├ªΓÇôΓÇí├ñ┬╗┬╢ \"{element.MacroPath}\" ├ª┬▓┬í├ª┼ôΓÇ░├¿┬ó┬½├ÑΓÇª┬╢├ñ┬╗ΓÇô├¿┬ºΓÇ₧├Ñ╦åΓäó├Ñ┬ÅΓÇÜ├¿Γé¼╞Æ├úΓé¼ΓÇÜ";
+-
+-            MessageBox.Show(msg, "├ª╦£┬╛├º┬ñ┬║├ªΓÇ░Γé¼├ª┼ôΓÇ░├Ñ┬¡╦£├Ñ┼ô┬¿├Ñ┬ÅΓÇÜ├¿Γé¼╞Æ", MessageBoxButton.OK, MessageBoxImage.Information);
+-        }
++                DragCanvas.Children.Clear();
+ 
+-        private void BtnAddElementBelow_Click(object sender, RoutedEventArgs e)
+-        {
+-            var btn = sender as Button;
+-            if (btn == null) return;
+-            var element = btn.DataContext as MacroElement;
+-            if (element == null) return;
+-
+-            if (_selectedItem is MacroTypical typical)
+-            {
+-                int index = typical.Elements.IndexOf(element);
+-                var newElement = new MacroElement();
+-                if (index != -1)
+-                {
+-                    typical.Elements.Insert(index + 1, newElement);
+-                }
+-                else
++                if (_currentHoverIndex != _dragStartRowIndex && _currentHoverIndex >= 0 && _currentHoverIndex < list.Count)
+                 {
+-                    typical.Elements.Add(newElement);
+-                }
+-                BindElementsList(typical.Elements);
+-                MarkDirty();
+-                ShowToast("├Ñ┬╖┬▓├Ñ┼ô┬¿├ñ┬╕ΓÇ╣├ªΓÇô┬╣├ª┬╖┬╗├Ñ┼á┬á├Ñ┬«┬Å├ÑΓÇª╞Æ├º┬┤┬á");
+-            }
+-        }
+-
+-        private void BtnCopyElement_Click(object sender, RoutedEventArgs e)
+-        {
+-            var btn = sender as Button;
+-            if (btn == null) return;
+-            var element = btn.DataContext as MacroElement;
+-            if (element == null) return;
++                    var dragged = list[_dragStartRowIndex];
++                    list.RemoveAt(_dragStartRowIndex);
++                    list.Insert(_currentHoverIndex, dragged);
+ 
+-            if (_selectedItem is MacroTypical typical)
+-            {
+-                int index = typical.Elements.IndexOf(element);
+-                string json = JsonConvert.SerializeObject(element);
+-                var copy = JsonConvert.DeserializeObject<MacroElement>(json);
+-                if (index != -1)
+-                {
+-                    typical.Elements.Insert(index + 1, copy);
++                    // Refresh UI binding and keep selection
++                    if (_activeItemsControl == ItrElements)
++                    {
++                        BindElementsList(list as List<MacroElement>);
++                    }
++                    else if (_activeItemsControl == ItrVariables)
++                    {
++                        BindVariablesList(list as List<ConfigurationVariable>);
++                    }
++                    else if (_activeItemsControl == ItrInstances)
++                    {
++                        BindInstancesList(list as List<TypicalInstance>);
++                    }
++                    else if (_activeItemsControl == ItrConfigGroupsList)
++                    {
++                        BindConfigGroupsList(_selectedItem as Configurator);
++                    }
++                    MarkDirty();
+                 }
+                 else
+                 {
+-                    typical.Elements.Add(copy);
++                    var startRow = _activeItemsControl.ItemContainerGenerator.ContainerFromIndex(_dragStartRowIndex) as FrameworkElement;
++                    if (startRow != null)
++                    {
++                        startRow.Tag = null;
++                        startRow.Opacity = 1.0;
++                    }
+                 }
+-                BindElementsList(typical.Elements);
+-                MarkDirty();
+-                ShowToast("├Ñ┬╖┬▓├Ñ┬ñ┬ì├Ñ╦å┬╢├⌐Γé¼ΓÇ░├ñ┬╕┬¡├º┼íΓÇ₧├Ñ┬«┬Å├ÑΓÇª╞Æ├º┬┤┬á");
+-            }
+-        }
+ 
+-        private void BtnBrowseElementMacro_Click(object sender, RoutedEventArgs e)
+-        {
+-            var btn = sender as Button;
+-            if (btn == null) return;
+-            var element = btn.DataContext as MacroElement;
+-            if (element == null) return;
+-
+-            var menu = new ContextMenu();
+-            var itemNav = new MenuItem { Header = "├░┼╕ΓÇ¥┬ì ├ñ┬╗┼╜├⌐┬í┬╣├ºΓÇ║┬«├Ñ┬«┬Å├Ñ┬»┬╝├¿╦å┬¬├ÑΓäó┬¿├⌐Γé¼ΓÇ░├ªΓÇ╣┬⌐" };
+-            itemNav.Click += (s, ev) => ShowMacroNavigator(isAddingNew: false, target: element);
+-            
+-            var itemDisk = new MenuItem { Header = "├░┼╕ΓÇ£ΓÇÜ ├⌐Γé¼ΓÇ░├ªΓÇ╣┬⌐├ª┼ô┬¼├Ñ┼ô┬░├º┬ú┬ü├ºΓÇ║╦£├ªΓÇôΓÇí├ñ┬╗┬╢..." };
+-            itemDisk.Click += (s, ev) => {
+-                var dialog = new OpenFileDialog
+-                {
+-                    Filter = "EPLAN ├Ñ┬«┬Å├ªΓÇôΓÇí├ñ┬╗┬╢ (*.ema;*.ems;*.emp)|*.ema;*.ems;*.emp|├ªΓÇ░Γé¼├ª┼ôΓÇ░├ªΓÇôΓÇí├ñ┬╗┬╢ (*.*)|*.*",
+-                    Title = "├⌐Γé¼ΓÇ░├ªΓÇ╣┬⌐├Ñ┬«┬Å├ªΓÇôΓÇí├ñ┬╗┬╢"
+-                };
+-                if (dialog.ShowDialog() == true)
++                for (int i = 0; i < list.Count; i++)
+                 {
+-                    element.MacroPath = dialog.FileName;
+-                    element.VariantIndex = 0; // Reset variant
+-
+-                    // Automatically extract placeholders
+-                    AutoExtractPlaceholdersForElement(element);
+-
+-                    if (_selectedItem is MacroTypical typical)
++                    var row = _activeItemsControl.ItemContainerGenerator.ContainerFromIndex(i) as FrameworkElement;
++                    if (row != null)
+                     {
+-                        BindElementsList(typical.Elements);
++                        row.Tag = null;
++                        row.Opacity = 1.0;
++                        if (row.RenderTransform is TranslateTransform transform)
++                        {
++                            transform.BeginAnimation(TranslateTransform.YProperty, null);
++                            transform.Y = 0;
++                        }
+                     }
+-                    MarkDirty();
+                 }
++
++                _draggedItem = null;
++                _activeItemsControl = null;
++                _dragFloatingCard = null;
++                _isDraggingActive = false;
+             };
+-            menu.Items.Add(itemNav);
+-            menu.Items.Add(itemDisk);
+-            menu.IsOpen = true;
++
++            _dragFloatingCard.BeginAnimation(Canvas.TopProperty, snapAnimation);
+         }
+ 
+-        private void AutoExtractPlaceholdersForElement(MacroElement element)
++        private void General_LostMouseCapture(object sender, System.Windows.Input.MouseEventArgs e)
+         {
+-            if (element == null || string.IsNullOrWhiteSpace(element.MacroPath)) return;
+-            try
+-            {
+-                var placeholders = ConfiguratorService.ExtractPlaceholdersFromMacroFile(element.MacroPath, element.VariantIndex);
+-                if (placeholders != null && placeholders.Count > 0)
+-                {
+-                    var newMappings = new List<MappingEntry>();
+-                    foreach (var ph in placeholders)
+-                    {
+-                        var existing = element.VariableMappings?.FirstOrDefault(m => {
+-                            if (string.Equals(m.Key, ph, StringComparison.OrdinalIgnoreCase)) return true;
+-                            string normKey = m.Key.Replace(" : ", "=");
+-                            string normPh = ph.Replace(" : ", "=");
+-                            return string.Equals(normKey, normPh, StringComparison.OrdinalIgnoreCase);
+-                        });
+-                        newMappings.Add(new MappingEntry(ph, existing != null ? existing.Value : ""));
+-                    }
+-                    element.VariableMappings = newMappings;
+-                }
+-            }
+-            catch (Exception ex)
++            if (_isDraggingActive && !_isVoluntaryRelease)
+             {
+-                ConfiguratorService.LogDebug($"AutoExtractPlaceholdersForElement error: {ex.Message}");
++                CleanupDragDropState();
+             }
+         }
+ 
+-        // ==================== MACRO NAVIGATOR PANEL LOGIC ====================
+-        private async void ShowMacroNavigator(bool isAddingNew, MacroElement target)
++        private void CleanupDragDropState()
+         {
+-            _isAddingNewElement = isAddingNew;
+-            _targetElementForMacroSelection = target;
++            DragCanvas.Children.Clear();
+ 
+-            // Expand ColMacroNav column and show GridMacroNav & Splitter
+-            ColMacroNav.Width = new GridLength(280);
+-            GridMacroNav.Visibility = Visibility.Visible;
+-            if (SplitterMacroNav != null)
++            if (_activeItemsControl != null)
+             {
+-                SplitterMacroNav.Visibility = Visibility.Visible;
++                var list = _activeItemsControl.ItemsSource as System.Collections.IList;
++                if (list != null)
++                {
++                    for (int i = 0; i < list.Count; i++)
++                    {
++                        var row = _activeItemsControl.ItemContainerGenerator.ContainerFromIndex(i) as FrameworkElement;
++                        if (row != null)
++                        {
++                            row.Tag = null;
++                            row.Opacity = 1.0;
++                            if (row.RenderTransform is TranslateTransform transform)
++                            {
++                                transform.BeginAnimation(TranslateTransform.YProperty, null);
++                                transform.Y = 0;
++                            }
++                        }
++                    }
++                }
+             }
+ 
+-            // Only fetch if not already loaded to prevent slow reloading
+-            if (_allProjectMacros == null || _allProjectMacros.Count == 0)
+-            {
+-                await LoadMacrosFromActiveProjectAsync();
+-            }
++            _draggedItem = null;
++            _activeItemsControl = null;
++            _dragFloatingCard = null;
++            _isDraggingActive = false;
+         }
+ 
+-        private void BtnCloseMacroNav_Click(object sender, RoutedEventArgs e)
++        private void AnimateRowToOffset(FrameworkElement row, double targetY)
+         {
+-            // Just fold/collapse the column and hide UI. DO NOT reset the macro cache.
+-            ColMacroNav.Width = new GridLength(0);
+-            GridMacroNav.Visibility = Visibility.Collapsed;
+-            if (SplitterMacroNav != null)
++            if (!(row.RenderTransform is TranslateTransform))
+             {
+-                SplitterMacroNav.Visibility = Visibility.Collapsed;
++                row.RenderTransform = new TranslateTransform();
+             }
+-            _targetElementForMacroSelection = null;
+-            _isAddingNewElement = false;
+-        }
++            var transform = (TranslateTransform)row.RenderTransform;
+ 
+-        private async void BtnRefreshMacroNav_Click(object sender, RoutedEventArgs e)
+-        {
+-            await LoadMacrosFromActiveProjectAsync();
++            var animation = new System.Windows.Media.Animation.DoubleAnimation
++            {
++                To = targetY,
++                Duration = TimeSpan.FromMilliseconds(250),
++                EasingFunction = new System.Windows.Media.Animation.QuadraticEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseInOut }
++            };
++
++            transform.BeginAnimation(TranslateTransform.YProperty, animation);
+         }
+ 
+-        private void TxtSearchMacro_TextChanged(object sender, TextChangedEventArgs e)
++        private void ItrElements_DragOver(object sender, DragEventArgs e)
+         {
+-            FilterAndShowMacros();
++            e.Effects = DragDropEffects.None;
++            e.Handled = true;
+         }
+ 
+-        private void PopulateVariableMappings(MacroElement element, MacroTreeNode node)
++        private void ItrElements_Drop(object sender, DragEventArgs e)
+         {
+-            if (element == null || node == null) return;
+-
+-            var newMappings = new List<MappingEntry>();
+-            if (node.Children != null)
+-            {
+-                var phNames = node.Children
+-                    .Where(c => c.Type == "PlaceHolder" && !string.IsNullOrEmpty(c.Name))
+-                    .Select(c => c.Name)
+-                    .Distinct()
+-                    .ToList();
++            e.Handled = true;
++        }
+ 
+-                foreach (var name in phNames)
+-                {
+-                    var existing = element.VariableMappings?.FirstOrDefault(m => {
+-                        if (string.Equals(m.Key, name, StringComparison.OrdinalIgnoreCase)) return true;
+-                        string normKey = m.Key.Replace(" : ", "=");
+-                        string normName = name.Replace(" : ", "=");
+-                        return string.Equals(normKey, normName, StringComparison.OrdinalIgnoreCase);
+-                    });
+-                    string value = existing != null ? existing.Value : "";
+-                    newMappings.Add(new MappingEntry(name, value));
+-                }
+-            }
+-            element.VariableMappings = newMappings;
+-        }
+-
+-        private void TvMacros_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+-        {
+-            var selected = TvMacros.SelectedItem as MacroTreeNode;
+-            if (selected == null) return;
+-
+-            // Only allow selecting "Page" or "Variant" nodes
+-            if (selected.Type != "Page" && selected.Type != "Variant") return;
+-
+-            if (_selectedItem is MacroTypical typical)
+-            {
+-                if (_isAddingNewElement)
+-                {
+-                    // Create new MacroElement with selected path and typical positioning settings
+-                    var newElement = new MacroElement
+-                    {
+-                        MacroPath = selected.FullPath,
+-                        VariantIndex = selected.VariantIndex,
+-                        PositionMode = "FromMacro",
+-                        IsActiveFormula = ""
+-                    };
+-                    PopulateVariableMappings(newElement, selected);
+-                    typical.Elements.Add(newElement);
+-                }
+-                else if (_targetElementForMacroSelection != null)
+-                {
+-                    // Update existing element
+-                    _targetElementForMacroSelection.MacroPath = selected.FullPath;
+-                    _targetElementForMacroSelection.VariantIndex = selected.VariantIndex;
+-                    PopulateVariableMappings(_targetElementForMacroSelection, selected);
+-                }
+-
+-                // Force UI binding refresh
+-                BindElementsList(typical.Elements);
+-                MarkDirty();
+-            }
+-
+-            // Close navigator panel after selection
+-            BtnCloseMacroNav_Click(sender, e);
+-        }
+-
+-        private async Task LoadMacrosFromActiveProjectAsync()
+-        {
+-            if (ProgressBarLoad != null) ProgressBarLoad.Visibility = Visibility.Visible;
+-            if (BtnRefreshMacroNav != null) BtnRefreshMacroNav.IsEnabled = false;
+-
+-            // Let the UI thread render the progress bar
+-            await Task.Delay(50);
+-
+-            try
+-            {
+-                TxtSearchMacro.Text = "";
+-                _allProjectMacros = ConfiguratorService.GetActiveProjectMacros();
+-                FilterAndShowMacros();
+-            }
+-            catch (Exception ex)
+-            {
+-                MessageBox.Show($"├¿┼╜┬╖├Ñ┬ÅΓÇô├ª┬┤┬╗├Ñ┼á┬¿├⌐┬í┬╣├ºΓÇ║┬«├ñ┬╕┬¡├º┼íΓÇ₧├Ñ┬«┬Å├Ñ╦åΓÇö├¿┬í┬¿├Ñ┬ñ┬▒├¿┬┤┬Ñ: {ex.Message}", "├⌐ΓÇª┬ì├º┬╜┬«├ÑΓäó┬¿├ª┬Å┬É├º┬ñ┬║", MessageBoxButton.OK, MessageBoxImage.Warning);
+-            }
+-            finally
+-            {
+-                if (ProgressBarLoad != null) ProgressBarLoad.Visibility = Visibility.Collapsed;
+-                if (BtnRefreshMacroNav != null) BtnRefreshMacroNav.IsEnabled = true;
+-            }
+-        }
+-
+-        private void FilterAndShowMacros()
+-        {
+-            string search = TxtSearchMacro.Text.Trim().ToLower();
+-            var filtered = _allProjectMacros.Where(m =>
+-                string.IsNullOrEmpty(search) ||
+-                (m.Name != null && m.Name.ToLower().Contains(search)) ||
+-                (m.Description != null && m.Description.ToLower().Contains(search)) ||
+-                (m.MacroPath != null && m.MacroPath.ToLower().Contains(search))
+-            ).ToList();
+-
+-            TvMacros.ItemsSource = BuildMacroTree(filtered);
+-        }
+-
+-        private List<MacroTreeNode> BuildMacroTree(List<EplanMacroInfo> macros)
+-        {
+-            var rootNodes = new List<MacroTreeNode>();
+-
+-            // Root node: Defining
+-            var root = new MacroTreeNode
+-            {
+-                Name = "Defining",
+-                Type = "Root",
+-                Icon = "├░┼╕ΓÇöΓÇÜ├»┬╕┬Å"
+-            };
+-            rootNodes.Add(root);
+-
+-            foreach (var macro in macros)
+-            {
+-                string projName = string.IsNullOrEmpty(macro.ProjectName) ? "Without name" : macro.ProjectName;
+-                var projNode = root.Children.FirstOrDefault(n => n.Type == "Project" && n.Name == projName);
+-                if (projNode == null)
+-                {
+-                    projNode = new MacroTreeNode
+-                    {
+-                        Name = projName,
+-                        Type = "Project",
+-                        Icon = "├░┼╕ΓÇ£┬ü"
+-                    };
+-                    root.Children.Add(projNode);
+-                }
+-
+-                var pathParts = SplitMacroPath(macro.MacroPath);
+-                if (pathParts.Count == 0) continue;
+-
+-                var folderParts = pathParts.Take(pathParts.Count - 1).ToList();
+-                string macroFileName = Path.GetFileNameWithoutExtension(pathParts.Last());
+-
+-                var currentNode = projNode;
+-                foreach (var folder in folderParts)
+-                {
+-                    var folderNode = currentNode.Children.FirstOrDefault(n => n.Type == "Folder" && n.Name == folder);
+-                    if (folderNode == null)
+-                    {
+-                        folderNode = new MacroTreeNode
+-                        {
+-                            Name = folder,
+-                            Type = "Folder",
+-                            Icon = "├░┼╕ΓÇ£┬ü"
+-                        };
+-                        currentNode.Children.Add(folderNode);
+-                    }
+-                    currentNode = folderNode;
+-                }
+-
+-                var macroNode = currentNode.Children.FirstOrDefault(n => n.Type == "Macro" && n.Name == macroFileName);
+-                if (macroNode == null)
+-                {
+-                    macroNode = new MacroTreeNode
+-                    {
+-                        Name = macroFileName,
+-                        Type = "Macro",
+-                        Icon = "├░┼╕ΓÇ£┬ª",
+-                        FullPath = macro.MacroPath
+-                    };
+-                    currentNode.Children.Add(macroNode);
+-                }
+-
+-                if (macro.IsPageMacro)
+-                {
+-                    string pageDisplayName = macro.Name;
+-
+-                    var pageNode = macroNode.Children.FirstOrDefault(n => n.Type == "Page" && n.Name == pageDisplayName);
+-                    if (pageNode == null)
+-                    {
+-                        pageNode = new MacroTreeNode
+-                        {
+-                            Name = pageDisplayName,
+-                            Type = "Page",
+-                            Icon = "├░┼╕ΓÇ£ΓÇ₧",
+-                            FullPath = macro.MacroPath,
+-                            VariantIndex = macro.VariantIndex,
+-                            RepresentationType = macro.RepresentationType
+-                        };
+-                        macroNode.Children.Add(pageNode);
+-                    }
+-
+-                    if (macro.Placeholders != null)
+-                    {
+-                        foreach (var ph in macro.Placeholders)
+-                        {
+-                            string phName = string.IsNullOrEmpty(ph) ? "" : ph;
+-                            if (!pageNode.Children.Any(n => n.Type == "PlaceHolder" && n.Name == phName))
+-                            {
+-                                pageNode.Children.Add(new MacroTreeNode
+-                                {
+-                                    Name = phName,
+-                                    Type = "PlaceHolder",
+-                                    Icon = "├ó┼íΓÇ£",
+-                                    FullPath = macro.MacroPath
+-                                });
+-                            }
+-                        }
+-                    }
+-                }
+-                else
+-                {
+-                    string repTypeName = GetRepresentationTypeName(macro.RepresentationType);
+-                    var repNode = macroNode.Children.FirstOrDefault(n => n.Type == "RepType" && n.Name == repTypeName);
+-                    if (repNode == null)
+-                    {
+-                        repNode = new MacroTreeNode
+-                        {
+-                            Name = repTypeName,
+-                            Type = "RepType",
+-                            Icon = "├ó┼íΓäó├»┬╕┬Å",
+-                            FullPath = macro.MacroPath
+-                        };
+-                        macroNode.Children.Add(repNode);
+-                    }
+-
+-                    string variantName = GetVariantName(macro.VariantIndex);
+-                    var variantNode = repNode.Children.FirstOrDefault(n => n.Type == "Variant" && n.Name == variantName);
+-                    if (variantNode == null)
+-                    {
+-                        variantNode = new MacroTreeNode
+-                        {
+-                            Name = variantName,
+-                            Type = "Variant",
+-                            Icon = "├░┼╕ΓÇ¥┬╣",
+-                            FullPath = macro.MacroPath,
+-                            VariantIndex = macro.VariantIndex,
+-                            RepresentationType = macro.RepresentationType
+-                        };
+-                        repNode.Children.Add(variantNode);
+-                    }
+-
+-                    if (macro.Placeholders != null)
+-                    {
+-                        foreach (var ph in macro.Placeholders)
+-                        {
+-                            string phName = string.IsNullOrEmpty(ph) ? "" : ph;
+-                            if (!variantNode.Children.Any(n => n.Type == "PlaceHolder" && n.Name == phName))
+-                            {
+-                                variantNode.Children.Add(new MacroTreeNode
+-                                {
+-                                    Name = phName,
+-                                    Type = "PlaceHolder",
+-                                    Icon = "├ó┼íΓÇ£",
+-                                    FullPath = macro.MacroPath
+-                                });
+-                            }
+-                        }
+-                    }
+-                }
+-            }
+-
+-            return rootNodes;
+-        }
+-
+-        private static List<string> SplitMacroPath(string macroPath)
+-        {
+-            string cleanPath = macroPath;
+-            if (cleanPath.StartsWith("$("))
+-            {
+-                int idx = cleanPath.IndexOf(')');
+-                if (idx != -1 && idx < cleanPath.Length - 1)
+-                {
+-                    cleanPath = cleanPath.Substring(idx + 1);
+-                }
+-            }
+-            cleanPath = cleanPath.TrimStart('\\', '/');
+-            var parts = cleanPath.Split(new char[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries).ToList();
+-            return parts;
+-        }
+-
+-        private static string GetVariantName(int index)
+-        {
+-            if (index >= 0 && index < 16)
+-            {
+-                return "Variant " + (char)('A' + index);
+-            }
+-            return "Variant A";
+-        }
+-
+-        private static string GetRepresentationTypeName(int repType)
+-        {
+-            switch (repType)
+-            {
+-                case 1: return "Multi-line";
+-                case 2: return "Single-line";
+-                case 3: return "Pair cross-reference";
+-                case 4: return "Overview";
+-                case 5: return "Graphics";
+-                case 6: return "Panel layout";
+-                case 7: return "Fluid power schematic";
+-                case 8: return "P&ID";
+-                case 9: return "Pre-planning";
+-                case 10: return "Topology";
+-                case 11: return "3D mounting layout";
+-                case 12: return "Functional";
+-                default: return "Multi-line";
+-            }
+-        }
+-
+-        public class MacroTreeNode
+-        {
+-            public string Name { get; set; }
+-            public string Type { get; set; } // "Root", "Project", "Folder", "Macro", "RepType", "Variant", "PlaceHolder"
+-            public string FullPath { get; set; }
+-            public string Icon { get; set; }
+-            public string Description { get; set; }
+-            public int VariantIndex { get; set; }
+-            public int RepresentationType { get; set; }
+-            public bool IsExpanded { get; set; } = true;
+-            public List<MacroTreeNode> Children { get; set; } = new List<MacroTreeNode>();
+-        }
+-
+-        // ==================== PLACEHOLDER VARIABLES MAPPINGS ====================
+-        private void BtnAddVarMapping_Click(object sender, RoutedEventArgs e)
+-        {
+-            var btn = sender as Button;
+-            if (btn == null) return;
+-            
+-            // Find parent items control datacontext (which is MacroElement)
+-            DependencyObject parent = VisualTreeHelper.GetParent(btn);
+-            while (parent != null && !(parent is ContentPresenter))
+-            {
+-                parent = VisualTreeHelper.GetParent(parent);
+-            }
+-
+-            if (parent != null)
+-            {
+-                var element = ((ContentPresenter)parent).Content as MacroElement;
+-                if (element != null)
+-                {
+-                    element.VariableMappings.Add(new MappingEntry("├ªΓÇô┬░├Ñ┬ì┬á├ñ┬╜┬ì├º┬¼┬ª", ""));
+-                    if (_selectedItem is MacroTypical typical)
+-                    {
+-                        BindElementsList(typical.Elements);
+-                    }
+-                }
+-            }
+-        }
+-
+-        private void BtnDeleteVarMapping_Click(object sender, RoutedEventArgs e)
+-        {
+-            var btn = sender as Button;
+-            if (btn == null) return;
+-            var entry = btn.DataContext as MappingEntry;
+-            if (entry == null) return;
+-
+-            // Find parent ItemsControl datacontext (MacroElement)
+-            DependencyObject parent = VisualTreeHelper.GetParent(btn);
+-            while (parent != null && !(parent is Border))
+-            {
+-                parent = VisualTreeHelper.GetParent(parent);
+-            }
+-
+-            if (parent != null)
+-            {
+-                var element = ((Border)parent).DataContext as MacroElement;
+-                if (element != null)
+-                {
+-                    element.VariableMappings.Remove(entry);
+-                    if (_selectedItem is MacroTypical typical)
+-                    {
+-                        BindElementsList(typical.Elements);
+-                    }
+-                }
+-            }
+-        }
+-
+-        // ==================== SAVE & GENERATE ====================
+-        private void BtnSave_Click(object sender, RoutedEventArgs e)
+-        {
+-            MarkDirty();
+-        }
+-
+-        private void BtnGenerate_Click(object sender, RoutedEventArgs e)
+-        {
+-            MarkDirty();
+-
+-            if (_selectedTab == 3)
+-            {
+-                if (!(_selectedItem is Configurator config))
+-                {
+-                    MessageBox.Show("├¿┬»┬╖├ÑΓÇª╦å├⌐Γé¼ΓÇ░├ªΓÇ╣┬⌐├ñ┬╕Γé¼├ñ┬╕┬¬ [├⌐ΓÇª┬ì├º┬╜┬«├ÑΓäó┬¿] ├ñ┬╗┬Ñ├ñ┬╛┬┐├¿ΓÇí┬¬├Ñ┼á┬¿├º┬╗╦£├ÑΓÇ║┬╛├»┬╝┬ü", "├¿┬¡┬ª├ÑΓÇÿ┼á", MessageBoxButton.OK, MessageBoxImage.Warning);
+-                    return;
+-                }
+-
+-                TxtStatus.Text = "├ª┬¡┬ú├Ñ┼ô┬¿├ºΓÇ¥┼╕├ª╦å┬É├Ñ┼╜┼╕├º┬ÉΓÇá├ÑΓÇ║┬╛...";
+-                TxtStatus.Foreground = Brushes.Blue;
+-
+-                var groupParameters = new Dictionary<string, Dictionary<string, object>>();
+-                foreach (var state in _builderStates)
+-                {
+-                    groupParameters[state.Group.Name] = GetGroupParameters(state);
+-                }
+-
+-                Action generateAction = () =>
+-                {
+-                    string result = ConfiguratorService.GenerateConfigurator(config, _db, groupParameters);
+-                    
+-                    this.Dispatcher.Invoke(() =>
+-                    {
+-                        TxtStatus.Text = result;
+-                        TxtStatus.Foreground = (result.StartsWith("├⌐ΓÇ¥Γäó├¿┬»┬»") || result.StartsWith("├Ñ┬ÅΓÇÿ├ºΓÇ¥┼╕├Ñ┬╝ΓÇÜ├Ñ┬╕┬╕")) ? Brushes.Red : Brushes.Green;
+-                    });
+-                };
+-
+-                var logWindow = new GenerationLogWindow(this, generateAction);
+-                logWindow.ShowDialog();
+-            }
+-            else
+-            {
+-                if (!(_selectedItem is MacroTypical typical))
+-                {
+-                    MessageBox.Show("├¿┬»┬╖├ÑΓÇª╦å├⌐Γé¼ΓÇ░├ªΓÇ╣┬⌐├ñ┬╕Γé¼├ñ┬╕┬¬ [├Ñ┬«┬Å├¿┬ºΓÇ₧├Ñ╦åΓäó] ├ñ┬╗┬Ñ├ñ┬╛┬┐├¿ΓÇí┬¬├Ñ┼á┬¿├º┬╗╦£├ÑΓÇ║┬╛├»┬╝┬ü", "├¿┬¡┬ª├ÑΓÇÿ┼á", MessageBoxButton.OK, MessageBoxImage.Warning);
+-                    return;
+-                }
+-
+-                TxtStatus.Text = "├ª┬¡┬ú├Ñ┼ô┬¿├¿┬º┬ú├ª┼╛┬É├¿┬ºΓÇ₧├Ñ╦åΓäó├Ñ┬╣┬╢├ªΓÇ░┬╣├⌐ΓÇí┬Å├ºΓÇ¥┼╕├ª╦å┬É├ÑΓÇ║┬╛├º┬║┬╕...";
+-                TxtStatus.Foreground = Brushes.Blue;
+-
+-                Action generateAction = () =>
+-                {
+-                    string result = ConfiguratorService.GenerateTypical(typical);
+-                    
+-                    this.Dispatcher.Invoke(() =>
+-                    {
+-                        TxtStatus.Text = result;
+-                        TxtStatus.Foreground = (result.StartsWith("├⌐ΓÇ¥Γäó├¿┬»┬»") || result.StartsWith("├Ñ┬ÅΓÇÿ├ºΓÇ¥┼╕├Ñ┬╝ΓÇÜ├Ñ┬╕┬╕")) ? Brushes.Red : Brushes.Green;
+-                    });
+-                };
+-
+-                var logWindow = new GenerationLogWindow(this, generateAction);
+-                logWindow.ShowDialog();
+-            }
+-        }
+-
+-        // ==================== TYPICAL INSTANCES LOGIC ====================
+-        private void BindInstancesList(List<TypicalInstance> list)
+-        {
+-            ItrInstances.ItemsSource = null;
+-            ItrInstances.ItemsSource = list;
+-            if (TxtHeaderInstances != null)
+-            {
+-                TxtHeaderInstances.Text = $"Macro Typicals and Typical Groups ({(list?.Count ?? 0)})";
+-            }
+-            if (GridInstancesEmptyState != null)
+-            {
+-                GridInstancesEmptyState.Visibility = (list == null || list.Count == 0) ? Visibility.Visible : Visibility.Collapsed;
+-            }
+-        }
+-
+-        private void BtnAddInstance_Click(object sender, RoutedEventArgs e)
+-        {
+-            e.Handled = true; // Prevent Expander toggle!
+-            if (!(_selectedItem is TypicalGroup selectedGroup)) return;
+-
+-            if (ModalAddElements == null || TxtModalAddTitle == null || TxtModalAddSubtitle == null || LstModalAddElements == null) return;
+-
+-            TxtModalAddTitle.Text = "Add elements";
+-            TxtModalAddSubtitle.Text = "Select elements to be added to the Typical Group.";
+-
+-            // Populate all available MacroTypicals and other TypicalGroups (excluding self)
+-            _allModalAddElements.Clear();
+-            
+-            foreach (var mt in _db.MacroTypicals)
+-            {
+-                _allModalAddElements.Add(new CheckableAddElement
+-                {
+-                    Name = mt.Name,
+-                    Type = "MacroTypical",
+-                    Icon = "├░┼╕┬º┬┐", // Concentric circles icon
+-                    IsChecked = false
+-                });
+-            }
+-
+-            foreach (var tg in _db.TypicalGroups)
+-            {
+-                if (string.Equals(tg.Name, selectedGroup.Name, StringComparison.OrdinalIgnoreCase))
+-                {
+-                    continue; // Exclude self
+-                }
+-                _allModalAddElements.Add(new CheckableAddElement
+-                {
+-                    Name = tg.Name,
+-                    Type = "TypicalGroup",
+-                    Icon = "├░┼╕ΓÇÿ┬Ñ", // Group icon
+-                    IsChecked = false
+-                });
+-            }
+-
+-            TxtModalAddSearch.Text = "";
+-            FilterModalAddElements();
+-
+-            ModalAddElements.Visibility = Visibility.Visible;
+-            UpdateModalAddSelectedCount();
+-        }
+-
+-        private void BtnDeleteInstance_Click(object sender, RoutedEventArgs e)
+-        {
+-            var btn = sender as Button;
+-            if (btn == null) return;
+-            var instance = btn.DataContext as TypicalInstance;
+-            if (instance == null) return;
+-
+-            if (_selectedItem is TypicalGroup group)
+-            {
+-                ShowDeleteConfirmation("├º┬í┬«├¿┬«┬ñ├Ñ╦å┬á├⌐Γäó┬ñ", "├ªΓÇÜ┬¿├º┬í┬«├Ñ┬«┼í├¿┬ª┬ü├ªΓÇô┬¡├Ñ┬╝Γé¼├ñ┬╕┼╜├ª┬¡┬ñ├¿┬ºΓÇ₧├Ñ╦åΓäó├Ñ┬«┼╛├ñ┬╛ΓÇ╣├º┼íΓÇ₧├ÑΓÇª┬│├¿┬üΓÇ¥├Ñ┬ÉΓÇö├»┬╝┼╕", () =>
+-                {
+-                    group.Instances.Remove(instance);
+-                    BindInstancesList(group.Instances);
+-                    MarkDirty();
+-                });
+-            }
+-        }
+-
+-        private void CboTargetTypical_SelectionChanged(object sender, SelectionChangedEventArgs e)
+-        {
+-            var cbo = sender as ComboBox;
+-            if (cbo == null) return;
+-            var instance = cbo.DataContext as TypicalInstance;
+-            if (instance == null) return;
+-
+-            var targetInfo = cbo.SelectedItem as TypicalTargetInfo;
+-            if (targetInfo == null) return;
+-
+-            instance.TargetName = targetInfo.Name;
+-            instance.Type = targetInfo.Type;
+-
+-            // Automatically populate child variables mapping template
+-            List<ConfigurationVariable> childVars = null;
+-            if (instance.Type.Equals("MacroTypical", StringComparison.OrdinalIgnoreCase))
+-            {
+-                var child = _db.MacroTypicals.FirstOrDefault(t => string.Equals(t.Name, instance.TargetName, StringComparison.OrdinalIgnoreCase));
+-                childVars = child?.Variables;
+-            }
+-            else if (instance.Type.Equals("TypicalGroup", StringComparison.OrdinalIgnoreCase))
+-            {
+-                var child = _db.TypicalGroups.FirstOrDefault(g => string.Equals(g.Name, instance.TargetName, StringComparison.OrdinalIgnoreCase));
+-                childVars = child?.Variables;
+-            }
+-
+-            if (childVars != null)
+-            {
+-                var newMappings = new List<MappingEntry>();
+-                foreach (var v in childVars)
+-                {
+-                    var existing = instance.VariableMappings?.FirstOrDefault(m => string.Equals(m.Key, v.Name, StringComparison.OrdinalIgnoreCase));
+-                    string val = existing != null ? existing.Value : "";
+-                    newMappings.Add(new MappingEntry(v.Name, val));
+-                }
+-                instance.VariableMappings = newMappings;
+-            }
+-            else
+-            {
+-                instance.VariableMappings = new List<MappingEntry>();
+-            }
+-
+-            // Refresh UI
+-            if (_selectedItem is TypicalGroup group)
+-            {
+-                BindInstancesList(group.Instances);
+-                MarkDirty();
+-            }
+-        }
+-
+-        public List<TypicalTargetInfo> AllTypicalTargets
+-        {
+-            get
+-            {
+-                var list = new List<TypicalTargetInfo>();
+-                if (_db?.MacroTypicals != null)
+-                {
+-                    foreach (var t in _db.MacroTypicals)
+-                    {
+-                        list.Add(new TypicalTargetInfo { Name = t.Name, Type = "MacroTypical" });
+-                    }
+-                }
+-                if (_db?.TypicalGroups != null)
+-                {
+-                    foreach (var g in _db.TypicalGroups)
+-                    {
+-                        if (_selectedItem is TypicalGroup selectedGroup && string.Equals(g.Name, selectedGroup.Name, StringComparison.OrdinalIgnoreCase))
+-                        {
+-                            continue; // Prevent self-nesting
+-                        }
+-                        list.Add(new TypicalTargetInfo { Name = g.Name, Type = "TypicalGroup" });
+-                    }
+-                }
+-                return list;
+-            }
+-        }
+-
+-        // ==================== CONFIGURATOR DETAILS LOGIC ====================
+-        private void TxtConfigDescription_LostFocus(object sender, RoutedEventArgs e)
+-        {
+-            if (_selectedItem is Configurator config)
+-            {
+-                config.Description = TxtConfigDescription.Text;
+-                MarkDirty();
+-            }
+-        }
+-
+-        private void BindConfigGroupsList(Configurator config)
+-        {
+-            ItrConfigGroupsList.ItemsSource = null;
+-            if (config != null)
+-            {
+-                ItrConfigGroupsList.ItemsSource = config.TypicalGroupRefs;
+-                if (TxtHeaderConfigGroups != null)
+-                {
+-                    TxtHeaderConfigGroups.Text = $"Associated Rule Groups ({(config.TypicalGroupRefs?.Count ?? 0)})";
+-                }
+-                if (GridConfigGroupsEmptyState != null)
+-                {
+-                    GridConfigGroupsEmptyState.Visibility = (config.TypicalGroupRefs == null || config.TypicalGroupRefs.Count == 0) ? Visibility.Visible : Visibility.Collapsed;
+-                }
+-            }
+-        }
+-
+-        private void BtnDeleteConfigGroup_Click(object sender, RoutedEventArgs e)
+-        {
+-            var btn = sender as Button;
+-            if (btn == null) return;
+-            string groupName = btn.DataContext as string;
+-            if (string.IsNullOrEmpty(groupName)) return;
+-
+-            if (_selectedItem is Configurator config)
+-            {
+-                ShowDeleteConfirmation("├º┬í┬«├¿┬«┬ñ├Ñ╦å┬á├⌐Γäó┬ñ", $"├º┬í┬«├Ñ┬«┼í├¿┬ª┬ü├ªΓÇô┬¡├Ñ┬╝Γé¼├¿┬ºΓÇ₧├Ñ╦åΓäó├º┬╗ΓÇ₧ '{groupName}' ├º┼íΓÇ₧├ÑΓÇª┬│├¿┬üΓÇ¥├Ñ┬ÉΓÇö├»┬╝┼╕", () =>
+-                {
+-                    config.TypicalGroupRefs.Remove(groupName);
+-                    BindConfigGroupsList(config);
+-                    MarkDirty();
+-                    ShowToast($"├Ñ┬╖┬▓├ªΓÇô┬¡├Ñ┬╝Γé¼├¿┬ºΓÇ₧├Ñ╦åΓäó├º┬╗ΓÇ₧ '{groupName}' ├º┼íΓÇ₧├ÑΓÇª┬│├¿┬üΓÇ¥");
+-                });
+-            }
+-        }
+-
+-        // ==================== PROJECT BUILDER FORM LOGIC ====================
+-        private class GroupBuilderFormState
+-        {
+-            public TypicalGroup Group { get; set; }
+-            public Dictionary<string, FrameworkElement> ControlMap { get; set; }
+-            public Dictionary<string, FrameworkElement> RowMap { get; set; }
+-        }
+-        private List<GroupBuilderFormState> _builderStates = new List<GroupBuilderFormState>();
+-
+-        private void RenderProjectBuilderForm(Configurator runConfig)
+-        {
+-            PanelBuilderForm.Children.Clear();
+-            _builderStates.Clear();
+-
+-            if (runConfig.TypicalGroupRefs == null || runConfig.TypicalGroupRefs.Count == 0)
+-            {
+-                var emptyMsg = new TextBlock
+-                {
+-                    Text = "├ª┬¡┬ñ├⌐ΓÇª┬ì├º┬╜┬«├ÑΓäó┬¿├Ñ┬░┼í├ª┼ô┬¬├ÑΓÇª┬│├¿┬üΓÇ¥├ñ┬╗┬╗├ñ┬╜ΓÇó├¿┬ºΓÇ₧├Ñ╦åΓäó├º┬╗ΓÇ₧├»┬╝┬ü├¿┬»┬╖├Ñ┼ô┬¿├¿┬«┬╛├¿┬«┬í├ª┬¿┬í├Ñ┬╝┬Å├ñ┬╕ΓÇ╣├ÑΓÇª┬│├¿┬üΓÇ¥├¿┬ºΓÇ₧├Ñ╦åΓäó├º┬╗ΓÇ₧├Ñ┬É┼╜├ÑΓÇá┬ì├¿┬┐ΓÇ║├¿┬í┼Æ├ºΓÇ¥┼╕├ª╦å┬É├úΓé¼ΓÇÜ",
+-                    Foreground = Brushes.Red,
+-                    FontStyle = FontStyles.Italic,
+-                    Margin = new Thickness(0, 10, 0, 0)
+-                };
+-                PanelBuilderForm.Children.Add(emptyMsg);
+-                return;
+-            }
+-
+-            foreach (string groupRef in runConfig.TypicalGroupRefs)
+-            {
+-                var group = _db.TypicalGroups.FirstOrDefault(g => string.Equals(g.Name, groupRef, StringComparison.OrdinalIgnoreCase));
+-                if (group == null) continue;
+-
+-                var state = new GroupBuilderFormState
+-                {
+-                    Group = group,
+-                    ControlMap = new Dictionary<string, FrameworkElement>(),
+-                    RowMap = new Dictionary<string, FrameworkElement>()
+-                };
+-
+-                // Group Title
+-                var header = new TextBlock
+-                {
+-                    Text = $"├¿┬ºΓÇ₧├Ñ╦åΓäó├º┬╗ΓÇ₧: {group.Name}",
+-                    FontSize = 14,
+-                    FontWeight = FontWeights.Bold,
+-                    Foreground = new SolidColorBrush(Color.FromRgb(15, 23, 42)),
+-                    Margin = new Thickness(0, 15, 0, 10)
+-                };
+-                PanelBuilderForm.Children.Add(header);
+-
+-                var groupPanel = new StackPanel { Margin = new Thickness(10, 0, 0, 15) };
+-
+-                if (group.Variables == null || group.Variables.Count == 0)
+-                {
+-                    var noVars = new TextBlock
+-                    {
+-                        Text = "├¿┬»┬Ñ├¿┬ºΓÇ₧├Ñ╦åΓäó├º┬╗ΓÇ₧├ªΓÇö┬á├⌐ΓÇª┬ì├º┬╜┬«├Ñ┬Å╦£├⌐ΓÇí┬Å",
+-                        Foreground = Brushes.Gray,
+-                        FontStyle = FontStyles.Italic,
+-                        Margin = new Thickness(10, 5, 0, 5)
+-                    };
+-                    groupPanel.Children.Add(noVars);
+-                }
+-                else
+-                {
+-                    // Group variables by category
+-                    var categories = group.Variables
+-                        .GroupBy(v => string.IsNullOrWhiteSpace(v.Category) ? "├Ñ┬╕┬╕├¿┬ºΓÇ₧├Ñ┬ÅΓÇÜ├ªΓÇó┬░" : v.Category.Trim())
+-                        .ToList();
+-
+-                    foreach (var cat in categories)
+-                    {
+-                        // Create an Expander for this category
+-                        var expander = new Expander
+-                        {
+-                            Header = cat.Key,
+-                            IsExpanded = true,
+-                            FontWeight = FontWeights.Bold,
+-                            Margin = new Thickness(0, 0, 0, 10),
+-                            Background = Brushes.Transparent,
+-                            HorizontalContentAlignment = HorizontalAlignment.Stretch
+-                        };
+-
+-                        var catPanel = new StackPanel { Margin = new Thickness(5) };
+-
+-                        foreach (var variable in cat)
+-                        {
+-                            var rowGrid = new Grid { Margin = new Thickness(0, 6, 0, 6) };
+-                            rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });
+-                            rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+-
+-                            var label = new Label
+-                            {
+-                                Content = string.IsNullOrEmpty(variable.DisplayName) ? variable.Name : variable.DisplayName,
+-                                VerticalAlignment = VerticalAlignment.Center,
+-                                Margin = new Thickness(0, 0, 10, 0),
+-                                FontWeight = FontWeights.Normal
+-                            };
+-                            Grid.SetColumn(label, 0);
+-                            rowGrid.Children.Add(label);
+-
+-                            FrameworkElement inputCtrl = null;
+-                            string defaultVal = variable.DefaultValue ?? "";
+-
+-                            if (variable.PredefinedValues != null && variable.PredefinedValues.Count > 0)
+-                            {
+-                                var cbo = new ComboBox { Height = 28, VerticalContentAlignment = VerticalAlignment.Center };
+-                                foreach (var opt in variable.PredefinedValues)
+-                                {
+-                                    cbo.Items.Add(opt);
+-                                }
+-
+-                                int defIdx = variable.PredefinedValues.IndexOf(defaultVal);
+-                                cbo.SelectedIndex = defIdx != -1 ? defIdx : 0;
+-
+-                                cbo.SelectionChanged += (s, ev) => EvaluateVisibilityForGroup(state);
+-                                inputCtrl = cbo;
+-                            }
+-                            else if (variable.Type.Equals("Boolean", StringComparison.OrdinalIgnoreCase))
+-                            {
+-                                var chk = new CheckBox { VerticalAlignment = VerticalAlignment.Center };
+-                                bool.TryParse(defaultVal, out bool defBool);
+-                                chk.IsChecked = defBool;
+-
+-                                chk.Checked += (s, ev) => EvaluateVisibilityForGroup(state);
+-                                chk.Unchecked += (s, ev) => EvaluateVisibilityForGroup(state);
+-                                inputCtrl = chk;
+-                            }
+-                            else
+-                            {
+-                                var txt = new TextBox { Height = 28, VerticalContentAlignment = VerticalAlignment.Center };
+-                                txt.Text = defaultVal;
+-
+-                                txt.TextChanged += (s, ev) => EvaluateVisibilityForGroup(state);
+-                                inputCtrl = txt;
+-                            }
+-
+-                            Grid.SetColumn(inputCtrl, 1);
+-                            rowGrid.Children.Add(inputCtrl);
+-
+-                            state.ControlMap[variable.Name] = inputCtrl;
+-                            state.RowMap[variable.Name] = rowGrid;
+-                            catPanel.Children.Add(rowGrid);
+-                        }
+-
+-                        expander.Content = catPanel;
+-                        groupPanel.Children.Add(expander);
+-                    }
+-                }
+-
+-                PanelBuilderForm.Children.Add(groupPanel);
+-                _builderStates.Add(state);
+-
+-                // Initial visibility run
+-                EvaluateVisibilityForGroup(state);
+-            }
+-        }
+-
+-        private void EvaluateVisibilityForGroup(GroupBuilderFormState state)
+-        {
+-            var parameters = GetGroupParameters(state);
+-            foreach (var variable in state.Group.Variables)
+-            {
+-                if (state.RowMap.TryGetValue(variable.Name, out var rowGrid))
+-                {
+-                    if (string.IsNullOrWhiteSpace(variable.VisibilityFormula))
+-                    {
+-                        rowGrid.Visibility = Visibility.Visible;
+-                    }
+-                    else
+-                    {
+-                        bool visible = ConfiguratorService.EvaluateActiveFormula(variable.VisibilityFormula, parameters);
+-                        rowGrid.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+-                    }
+-                }
+-            }
+-            ValidateProjectBuilderForm();
+-        }
+-
+-        private Dictionary<string, object> GetGroupParameters(GroupBuilderFormState state)
+-        {
+-            var parameters = new Dictionary<string, object>();
+-            foreach (var variable in state.Group.Variables)
+-            {
+-                if (state.ControlMap.TryGetValue(variable.Name, out var ctrl))
+-                {
+-                    object val = null;
+-                    if (ctrl is ComboBox cbo)
+-                    {
+-                        val = cbo.SelectedItem?.ToString() ?? "";
+-                    }
+-                    else if (ctrl is CheckBox chk)
+-                    {
+-                        val = chk.IsChecked == true;
+-                    }
+-                    else if (ctrl is TextBox txt)
+-                    {
+-                        string textVal = txt.Text;
+-                        val = textVal;
+-                        if (variable.Type.Equals("Integer", StringComparison.OrdinalIgnoreCase))
+-                        {
+-                            if (int.TryParse(textVal, out int intVal)) val = intVal;
+-                        }
+-                        else if (variable.Type.Equals("Double", StringComparison.OrdinalIgnoreCase))
+-                        {
+-                            if (double.TryParse(textVal, out double doubleVal)) val = doubleVal;
+-                        }
+-                    }
+-                    parameters[variable.Name] = val;
+-                }
+-                else
+-                {
+-                    parameters[variable.Name] = null;
+-                }
+-            }
+-            return parameters;
+-        }
+-
+-        private void BtnVariablePicker_Click(object sender, RoutedEventArgs e)
+-        {
+-            if (sender is Button btn && btn.Parent is Grid parentGrid)
+-            {
+-                TextBox targetTextBox = null;
+-                foreach (var child in parentGrid.Children)
+-                {
+-                    if (child is TextBox txt)
+-                    {
+-                        targetTextBox = txt;
+-                        break;
+-                    }
+-                }
+-
+-                if (targetTextBox == null) return;
+-
+-                var menu = new ContextMenu();
+-
+-                // 1. Available Configuration Variables from current context
+-                List<string> varNames = new List<string>();
+-                if (_selectedItem is MacroTypical typical)
+-                {
+-                    varNames.AddRange(typical.Variables.Select(v => v.Name));
+-                }
+-                else if (_selectedItem is TypicalGroup group)
+-                {
+-                    varNames.AddRange(group.Variables.Select(v => v.Name));
+-                }
+-
+-                if (varNames.Count > 0)
+-                {
+-                    var varsHeader = new MenuItem { Header = "├⌐ΓÇª┬ì├º┬╜┬«├Ñ┬Å╦£├⌐ΓÇí┬Å (Variables)", IsEnabled = false };
+-                    menu.Items.Add(varsHeader);
+-                    foreach (var name in varNames)
+-                    {
+-                        var item = new MenuItem { Header = name };
+-                        item.Click += (s, ev) => InsertTextIntoTextBox(targetTextBox, name);
+-                        menu.Items.Add(item);
+-                    }
+-                    menu.Items.Add(new Separator());
+-                }
+-
+-                // 2. Add common formulas & helper functions
+-                var formulasHeader = new MenuItem { Header = "├ÑΓÇª┬¼├Ñ┬╝┬Å├ÑΓÇí┬╜├ªΓÇó┬░ (Functions)", IsEnabled = false };
+-                menu.Items.Add(formulasHeader);
+-
+-                var lookupItem = new MenuItem { Header = "├ªΓÇô┬¡├¿┬╖┬»├ÑΓäó┬¿├⌐Γé¼ΓÇ░├Ñ┼╛ΓÇ╣: Lookup_Breaker('breaker_catalog.csv', 'OrderNumber', Current, 3)" };
+-                lookupItem.Click += (s, ev) => InsertTextIntoTextBox(targetTextBox, "Lookup_Breaker('breaker_catalog.csv', 'OrderNumber', Current, 3)");
+-                menu.Items.Add(lookupItem);
+-
+-                var concatItem = new MenuItem { Header = "├ªΓÇ╣┬╝├ª┼╜┬Ñ├Ñ┬¡ΓÇö├º┬¼┬ª├ñ┬╕┬▓: Concat(str1, str2)" };
+-                concatItem.Click += (s, ev) => InsertTextIntoTextBox(targetTextBox, "Concat(A, B)");
+-                menu.Items.Add(concatItem);
+-
+-                var ifItem = new MenuItem { Header = "├ª┬¥┬í├ñ┬╗┬╢├⌐Γé¼ΓÇ░├ªΓÇ╣┬⌐: if(cond, trueVal, falseVal)" };
+-                ifItem.Click += (s, ev) => InsertTextIntoTextBox(targetTextBox, "if(Current > 100, '3P', '1P')");
+-                menu.Items.Add(ifItem);
+-
+-                btn.ContextMenu = menu;
+-                menu.IsOpen = true;
+-            }
+-        }
+-
+-        private void InsertTextIntoTextBox(TextBox txt, string text)
+-        {
+-            if (txt == null) return;
+-            int selectionStart = txt.SelectionStart;
+-            txt.Text = txt.Text.Remove(selectionStart, txt.SelectionLength).Insert(selectionStart, text);
+-            txt.SelectionStart = selectionStart + text.Length;
+-            txt.Focus();
+-        }
+-
+-        private void FormulaTextBox_LostFocus(object sender, RoutedEventArgs e)
+-        {
+-            if (sender is TextBox txt)
+-            {
+-                string formula = txt.Text;
+-                if (string.IsNullOrWhiteSpace(formula))
+-                {
+-                    txt.ClearValue(Control.BackgroundProperty);
+-                    txt.ToolTip = null;
+-                    return;
+-                }
+-
+-                List<string> availableVars = new List<string>();
+-                if (_selectedItem is MacroTypical typical)
+-                {
+-                    availableVars.AddRange(typical.Variables.Select(v => v.Name));
+-                }
+-                else if (_selectedItem is TypicalGroup group)
+-                {
+-                    availableVars.AddRange(group.Variables.Select(v => v.Name));
+-                }
+-
+-                string error = ConfiguratorService.ValidateExpression(formula, availableVars);
+-                if (error != null)
+-                {
+-                    txt.Background = new SolidColorBrush(Color.FromRgb(63, 34, 34)); // Dark red for errors in dark theme
+-                    txt.ToolTip = error;
+-                }
+-                else
+-                {
+-                    txt.Background = new SolidColorBrush(Color.FromRgb(34, 63, 34)); // Dark green for success in dark theme
+-                    txt.ToolTip = "├ÑΓÇª┬¼├Ñ┬╝┬Å├ª┼ôΓÇ░├ªΓÇó╦å";
+-                }
+-            }
+-        }
+-
+-        private void BtnExtractPlaceholders_Click(object sender, RoutedEventArgs e)
+-        {
+-            if (sender is Button btn && btn.DataContext is MacroElement element)
+-            {
+-                if (string.IsNullOrWhiteSpace(element.MacroPath))
+-                {
+-                    MessageBox.Show("├¿┬»┬╖├ÑΓÇª╦å├ª┼ÆΓÇí├Ñ┬«┼í├Ñ┬«┬Å├ªΓÇôΓÇí├ñ┬╗┬╢├¿┬╖┬»├Ñ┬╛ΓÇ₧├»┬╝┬ü", "├ª┬Å┬É├º┬ñ┬║", MessageBoxButton.OK, MessageBoxImage.Warning);
+-                    return;
+-                }
+-
+-                try
+-                {
+-                    var placeholders = ConfiguratorService.ExtractPlaceholdersFromMacroFile(element.MacroPath, element.VariantIndex);
+-                    if (placeholders == null || placeholders.Count == 0)
+-                    {
+-                        MessageBox.Show("├ª┼ô┬¬├ª┬Å┬É├Ñ┬ÅΓÇô├Ñ╦å┬░├ñ┬╗┬╗├ñ┬╜ΓÇó├Ñ┬ì┬á├ñ┬╜┬ì├º┬¼┬ª├Ñ┬Å╦£├⌐ΓÇí┬Å├úΓé¼ΓÇÜ├¿┬»┬╖├º┬í┬«├ñ┬┐┬¥├Ñ┬«┬Å├ªΓÇôΓÇí├ñ┬╗┬╢├Ñ┬¡╦£├Ñ┼ô┬¿├ñ┬╕ΓÇ¥├Ñ┼ÆΓÇª├Ñ┬É┬½├Ñ┬ì┬á├ñ┬╜┬ì├º┬¼┬ª├»┬╝┼Æ├ñ┬╕ΓÇ¥├Ñ┬╜ΓÇ£├ÑΓÇ░┬ì├Ñ┼ô┬¿EPLAN├ñ┬╕┬¡├Ñ┬╖┬▓├ªΓÇ░ΓÇ£├Ñ┬╝Γé¼├ñ┬║ΓÇá├ñ┬╕Γé¼├ñ┬╕┬¬├⌐┬í┬╣├ºΓÇ║┬«├úΓé¼ΓÇÜ", "├ª┬Å┬É├º┬ñ┬║", MessageBoxButton.OK, MessageBoxImage.Information);
+-                        return;
+-                    }
+-
+-                    var currentMappings = element.VariableMappings.ToDictionary(m => m.Key, m => m.Value);
+-                    element.VariableMappings.Clear();
+-
+-                    foreach (var ph in placeholders)
+-                    {
+-                        string val = "";
+-                        var matchedKey = currentMappings.Keys.FirstOrDefault(k => 
+-                            string.Equals(k, ph, StringComparison.OrdinalIgnoreCase) ||
+-                            string.Equals(k.Replace(" : ", "="), ph.Replace(" : ", "="), StringComparison.OrdinalIgnoreCase)
+-                        );
+-                        if (matchedKey != null)
+-                        {
+-                            val = currentMappings[matchedKey];
+-                        }
+-                        element.VariableMappings.Add(new MappingEntry(ph, val));
+-                    }
+-
+-                    if (_selectedItem is MacroTypical typical)
+-                    {
+-                        BindElementsList(typical.Elements);
+-                    }
+-                    MarkDirty();
+-
+-                    MessageBox.Show($"├ª╦å┬É├Ñ┼á┼╕├ª┬Å┬É├Ñ┬ÅΓÇô {placeholders.Count} ├ñ┬╕┬¬├Ñ┬ì┬á├ñ┬╜┬ì├º┬¼┬ª├Ñ┬Å╦£├⌐ΓÇí┬Å├»┬╝┬ü", "├ª┬Å┬É├º┬ñ┬║", MessageBoxButton.OK, MessageBoxImage.Information);
+-                }
+-                catch (Exception ex)
+-                {
+-                    MessageBox.Show($"├ª┬Å┬É├Ñ┬ÅΓÇô├Ñ┬ì┬á├ñ┬╜┬ì├º┬¼┬ª├Ñ┬ñ┬▒├¿┬┤┬Ñ: {ex.Message}", "├⌐ΓÇ¥Γäó├¿┬»┬»", MessageBoxButton.OK, MessageBoxImage.Error);
+-                }
+-            }
+-        }
+-
+-        private void BtnImportLibrary_Click(object sender, RoutedEventArgs e)
+-        {
+-            var openFileDialog = new OpenFileDialog
+-            {
+-                Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*",
+-                Title = "├Ñ┬»┬╝├ÑΓÇª┬Ñ├¿┬ºΓÇ₧├Ñ╦åΓäó├Ñ┬║ΓÇ£├⌐ΓÇª┬ì├º┬╜┬«"
+-            };
+-
+-            if (openFileDialog.ShowDialog() == true)
+-            {
+-                try
+-                {
+-                    string json = File.ReadAllText(openFileDialog.FileName);
+-                    var importedData = JsonConvert.DeserializeObject<ConfiguratorData>(json);
+-                    if (importedData == null)
+-                    {
+-                        MessageBox.Show("├Ñ┬»┬╝├ÑΓÇª┬Ñ├º┼íΓÇ₧├ªΓÇôΓÇí├ñ┬╗┬╢├ª┬á┬╝├Ñ┬╝┬Å├ñ┬╕┬ì├ª┬¡┬ú├º┬í┬«├ª╦åΓÇô├ñ┬╕┬║├º┬⌐┬║├»┬╝┬ü", "├ª┬Å┬É├º┬ñ┬║", MessageBoxButton.OK, MessageBoxImage.Warning);
+-                        return;
+-                    }
+-
+-                    var result = MessageBox.Show(
+-                        "├ª╦£┬»├Ñ┬É┬ª├¿┬ªΓÇá├ºΓÇ║ΓÇô├Ñ┬╜ΓÇ£├ÑΓÇ░┬ì├Ñ┬║ΓÇ£├º┼íΓÇ₧├⌐ΓÇª┬ì├º┬╜┬«├»┬╝┼╕\n├⌐Γé¼ΓÇ░├ªΓÇ╣┬⌐ [├ª╦£┬»] ├Ñ┬░ΓÇá├Ñ┬«┼Æ├ÑΓÇª┬¿├¿┬ªΓÇá├ºΓÇ║ΓÇô├º┼╜┬░├ª┼ôΓÇ░├⌐ΓÇª┬ì├º┬╜┬«├úΓé¼ΓÇÜ\n├⌐Γé¼ΓÇ░├ªΓÇ╣┬⌐ [├Ñ┬É┬ª] ├Ñ┬░ΓÇá├Ñ┬É╦å├Ñ┬╣┬╢├ªΓÇô┬░├⌐ΓÇª┬ì├º┬╜┬«├»┬╝╦å├ª┬á┬╣├ª┬ì┬«├Ñ┬É┬ì├º┬º┬░├⌐┬ü┬┐├ÑΓÇª┬ì├⌐ΓÇí┬ì├Ñ┬ñ┬ì├»┬╝ΓÇ░├úΓé¼ΓÇÜ",
+-                        "├Ñ┬»┬╝├ÑΓÇª┬Ñ├⌐Γé¼ΓÇ░├⌐┬í┬╣",
+-                        MessageBoxButton.YesNoCancel,
+-                        MessageBoxImage.Question);
+-
+-                    if (result == MessageBoxResult.Cancel) return;
+-
+-                    if (result == MessageBoxResult.Yes)
+-                    {
+-                        _db = importedData;
+-                    }
+-                    else
+-                    {
+-                        foreach (var mt in importedData.MacroTypicals)
+-                        {
+-                            if (!_db.MacroTypicals.Any(t => t.Name == mt.Name))
+-                                _db.MacroTypicals.Add(mt);
+-                        }
+-                        foreach (var tg in importedData.TypicalGroups)
+-                        {
+-                            if (!_db.TypicalGroups.Any(g => g.Name == tg.Name))
+-                                _db.TypicalGroups.Add(tg);
+-                        }
+-                        foreach (var cfg in importedData.Configurators)
+-                        {
+-                            if (!_db.Configurators.Any(c => c.Name == cfg.Name))
+-                                _db.Configurators.Add(cfg);
+-                        }
+-                    }
+-
+-                    MarkDirty();
+-                    RefreshSidebar();
+-                    UpdateWorkspaceSelection();
+-
+-                    MessageBox.Show("├¿┬ºΓÇ₧├Ñ╦åΓäó├Ñ┬║ΓÇ£├Ñ┬»┬╝├ÑΓÇª┬Ñ├ª╦å┬É├Ñ┼á┼╕├»┬╝┬ü", "├ª┬Å┬É├º┬ñ┬║", MessageBoxButton.OK, MessageBoxImage.Information);
+-                }
+-                catch (Exception ex)
+-                {
+-                    MessageBox.Show($"├Ñ┬»┬╝├ÑΓÇª┬Ñ├Ñ┬ñ┬▒├¿┬┤┬Ñ: {ex.Message}", "├⌐ΓÇ¥Γäó├¿┬»┬»", MessageBoxButton.OK, MessageBoxImage.Error);
+-                }
+-            }
+-        }
+-
+-        private void BtnExportLibrary_Click(object sender, RoutedEventArgs e)
+-        {
+-            var saveFileDialog = new SaveFileDialog
+-            {
+-                Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*",
+-                FileName = "configurator_library.json",
+-                Title = "├Ñ┬»┬╝├ÑΓÇí┬║├¿┬ºΓÇ₧├Ñ╦åΓäó├Ñ┬║ΓÇ£├⌐ΓÇª┬ì├º┬╜┬«"
+-            };
+-
+-            if (saveFileDialog.ShowDialog() == true)
+-            {
+-                try
+-                {
+-                    string json = JsonConvert.SerializeObject(_db, Formatting.Indented);
+-                    File.WriteAllText(saveFileDialog.FileName, json);
+-                    MessageBox.Show("├¿┬ºΓÇ₧├Ñ╦åΓäó├Ñ┬║ΓÇ£├Ñ┬»┬╝├ÑΓÇí┬║├ª╦å┬É├Ñ┼á┼╕├»┬╝┬ü", "├ª┬Å┬É├º┬ñ┬║", MessageBoxButton.OK, MessageBoxImage.Information);
+-                }
+-                catch (Exception ex)
+-                {
+-                    MessageBox.Show($"├Ñ┬»┬╝├ÑΓÇí┬║├Ñ┬ñ┬▒├¿┬┤┬Ñ: {ex.Message}", "├⌐ΓÇ¥Γäó├¿┬»┬»", MessageBoxButton.OK, MessageBoxImage.Error);
+-                }
+-            }
+-        }
+-
+-        private void BtnLibrarySettings_Click(object sender, RoutedEventArgs e)
+-        {
+-            if (_db.Settings == null)
+-            {
+-                _db.Settings = new LibrarySettings();
+-            }
+-
+-            var dialog = new LibrarySettingsDialog(_db.Settings);
+-            dialog.Owner = this;
+-            if (dialog.ShowDialog() == true)
+-            {
+-                _db.Settings = dialog.Settings;
+-                MarkDirty();
+-                MessageBox.Show("├Ñ┬║ΓÇ£├Ñ┬▒┼╛├ªΓé¼┬º├¿┬«┬╛├º┬╜┬«├Ñ┬╖┬▓├ñ┬┐┬¥├Ñ┬¡╦£├»┬╝┬ü", "├ª┬Å┬É├º┬ñ┬║", MessageBoxButton.OK, MessageBoxImage.Information);
+-            }
+-        }
+-
+-        private void BtnImportBuilderConfig_Click(object sender, RoutedEventArgs e)
+-        {
+-            var openFileDialog = new OpenFileDialog
+-            {
+-                Filter = "XML files (*.xml)|*.xml|Excel files (*.xlsx)|*.xlsx|All files (*.*)|*.*",
+-                Title = "├Ñ┬»┬╝├ÑΓÇª┬Ñ Project Builder ├Ñ┬Å╦£├⌐ΓÇí┬Å├⌐ΓÇª┬ì├º┬╜┬«"
+-            };
+-
+-            if (openFileDialog.ShowDialog() == true)
+-            {
+-                string filePath = openFileDialog.FileName;
+-                string configuratorName = "";
+-                Dictionary<string, string> importedValues = null;
+-
+-                if (filePath.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
+-                {
+-                    importedValues = ImportVariablesFromXml(filePath, out configuratorName);
+-                }
+-                else if (filePath.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+-                {
+-                    importedValues = ImportVariablesFromXlsx(filePath, out configuratorName);
+-                }
+-
+-                if (importedValues == null || importedValues.Count == 0)
+-                {
+-                    MessageBox.Show("├ª┼ô┬¬├¿╞Æ┬╜├Ñ┼ô┬¿├Ñ┬»┬╝├ÑΓÇª┬Ñ├º┼íΓÇ₧├ªΓÇôΓÇí├ñ┬╗┬╢├ñ┬╕┬¡├ªΓÇ░┬╛├Ñ╦å┬░├ñ┬╗┬╗├ñ┬╜ΓÇó├ª┼ôΓÇ░├ªΓÇó╦å├º┼íΓÇ₧├Ñ┬Å╦£├⌐ΓÇí┬Å├⌐ΓÇª┬ì├º┬╜┬«├»┬╝┬ü", "├ª┬Å┬É├º┬ñ┬║", MessageBoxButton.OK, MessageBoxImage.Warning);
+-                    return;
+-                }
+-
+-                // Fill values into current form
+-                int filledCount = 0;
+-                foreach (var state in _builderStates)
+-                {
+-                    foreach (var variable in state.Group.Variables)
+-                    {
+-                        string val = null;
+-                        if (importedValues.TryGetValue($"{state.Group.Name}.{variable.Name}", out string v1))
+-                        {
+-                            val = v1;
+-                        }
+-                        else if (importedValues.TryGetValue(variable.Name, out string v2))
+-                        {
+-                            val = v2;
+-                        }
+-
+-                        if (val != null)
+-                        {
+-                            if (state.ControlMap.TryGetValue(variable.Name, out var ctrl))
+-                            {
+-                                if (ctrl is TextBox txt)
+-                                {
+-                                    txt.Text = val;
+-                                    filledCount++;
+-                                }
+-                                else if (ctrl is ComboBox cbo)
+-                                {
+-                                    cbo.SelectedItem = val;
+-                                    cbo.Text = val;
+-                                    filledCount++;
+-                                }
+-                                else if (ctrl is CheckBox chk)
+-                                {
+-                                    chk.IsChecked = (string.Equals(val, "True", StringComparison.OrdinalIgnoreCase) || val == "1");
+-                                    filledCount++;
+-                                }
+-                            }
+-                        }
+-                    }
+-                }
+-
+-                // Force visibility and validation refresh
+-                foreach (var state in _builderStates)
+-                {
+-                    EvaluateVisibilityForGroup(state);
+-                }
+-                ValidateProjectBuilderForm();
+-
+-                MessageBox.Show($"├ª╦å┬É├Ñ┼á┼╕├Ñ┬»┬╝├ÑΓÇª┬Ñ├Ñ┬╣┬╢├Ñ┬í┬½├ÑΓÇªΓÇª├ñ┬║ΓÇá {filledCount} ├ñ┬╕┬¬├⌐ΓÇª┬ì├º┬╜┬«├Ñ┬Å╦£├⌐ΓÇí┬Å├º┼íΓÇ₧├ÑΓé¼┬╝├»┬╝┬ü", "├Ñ┬»┬╝├ÑΓÇª┬Ñ├ª╦å┬É├Ñ┼á┼╕", MessageBoxButton.OK, MessageBoxImage.Information);
+-            }
+-        }
+-
+-        private void BtnExportBuilderConfig_Click(object sender, RoutedEventArgs e)
+-        {
+-            if (!(_selectedItem is Configurator config)) return;
+-
+-            var saveFileDialog = new SaveFileDialog
+-            {
+-                Filter = "XML files (*.xml)|*.xml|Excel files (*.xlsx)|*.xlsx",
+-                FileName = $"{config.Name}_Config",
+-                Title = "├Ñ┬»┬╝├ÑΓÇí┬║ Project Builder ├Ñ┬Å╦£├⌐ΓÇí┬Å├⌐ΓÇª┬ì├º┬╜┬«"
+-            };
+-
+-            if (saveFileDialog.ShowDialog() == true)
+-            {
+-                string filePath = saveFileDialog.FileName;
+-                var values = new Dictionary<string, string>();
+-
+-                // Gather current UI values
+-                foreach (var state in _builderStates)
+-                {
+-                    foreach (var variable in state.Group.Variables)
+-                    {
+-                        if (state.ControlMap.TryGetValue(variable.Name, out var ctrl))
+-                        {
+-                            string val = "";
+-                            if (ctrl is TextBox txt) val = txt.Text;
+-                            else if (ctrl is ComboBox cbo) val = cbo.SelectedItem?.ToString() ?? cbo.Text;
+-                            else if (ctrl is CheckBox chk) val = (chk.IsChecked == true).ToString();
+-
+-                            values[variable.Name] = val;
+-                            values[$"{state.Group.Name}.{variable.Name}"] = val;
+-                        }
+-                    }
+-                }
+-
+-                if (filePath.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
+-                {
+-                    ExportVariablesToXml(filePath, config.Name, values);
+-                }
+-                else if (filePath.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+-                {
+-                    ExportVariablesToXlsx(filePath, config.Name, values);
+-                }
+-
+-                MessageBox.Show("├⌐ΓÇª┬ì├º┬╜┬«├Ñ┬Å╦£├⌐ΓÇí┬Å├Ñ┬»┬╝├ÑΓÇí┬║├ª╦å┬É├Ñ┼á┼╕├»┬╝┬ü", "├ª┬Å┬É├º┬ñ┬║", MessageBoxButton.OK, MessageBoxImage.Information);
+-            }
+-        }
+-
+-        private Dictionary<string, string> ImportVariablesFromXml(string filePath, out string configuratorName)
+-        {
+-            var values = new Dictionary<string, string>();
+-            configuratorName = "";
+-            try
+-            {
+-                var doc = XDocument.Load(filePath);
+-                var root = doc.Root;
+-                if (root != null && root.Name.LocalName == "Configuration")
+-                {
+-                    configuratorName = root.Attribute("typical")?.Value ?? "";
+-
+-                    // Read flat variables
+-                    var varsElement = root.Element("ConfigurationVariables");
+-                    if (varsElement != null)
+-                    {
+-                        foreach (var el in varsElement.Elements("ConfigurationVariable"))
+-                        {
+-                            string name = el.Attribute("name")?.Value ?? el.Name.LocalName;
+-                            string val = el.Value;
+-                            if (!string.IsNullOrEmpty(name))
+-                            {
+-                                values[name] = val;
+-                            }
+-                        }
+-                    }
+-
+-                    // Read typical instances (nesting)
+-                    foreach (var instanceEl in root.Elements("TypicalInstance"))
+-                    {
+-                        string groupName = instanceEl.Attribute("name")?.Value ?? "";
+-                        foreach (var inst in instanceEl.Elements("Instance"))
+-                        {
+-                            var subVars = inst.Element("ConfigurationVariables");
+-                            if (subVars != null)
+-                            {
+-                                foreach (var el in subVars.Elements("ConfigurationVariable"))
+-                                {
+-                                    string name = el.Attribute("name")?.Value ?? el.Name.LocalName;
+-                                    string val = el.Value;
+-                                    if (!string.IsNullOrEmpty(name))
+-                                    {
+-                                        values[name] = val;
+-                                        if (!string.IsNullOrEmpty(groupName))
+-                                        {
+-                                            values[$"{groupName}.{name}"] = val;
+-                                        }
+-                                    }
+-                                }
+-                            }
+-                        }
+-                    }
+-                }
+-            }
+-            catch (Exception ex)
+-            {
+-                MessageBox.Show($"├¿┬º┬ú├ª┼╛┬É XML ├ªΓÇôΓÇí├ñ┬╗┬╢├Ñ┬ñ┬▒├¿┬┤┬Ñ: {ex.Message}", "├⌐ΓÇ¥Γäó├¿┬»┬»", MessageBoxButton.OK, MessageBoxImage.Error);
+-            }
+-            return values;
+-        }
+-
+-        private void ExportVariablesToXml(string filePath, string configuratorName, Dictionary<string, string> values)
+-        {
+-            try
+-            {
+-                var root = new XElement("Configuration", new XAttribute("typical", configuratorName));
+-
+-                // Write flat variables
+-                var varsElement = new XElement("ConfigurationVariables");
+-                foreach (var kvp in values)
+-                {
+-                    if (kvp.Key.Contains(".")) continue;
+-                    varsElement.Add(new XElement("ConfigurationVariable",
+-                        new XAttribute("name", kvp.Key),
+-                        kvp.Value));
+-                }
+-                root.Add(varsElement);
+-
+-                // Write typical instances
+-                var groups = values.Keys.Where(k => k.Contains(".")).Select(k => k.Split('.')[0]).Distinct();
+-                foreach (var groupName in groups)
+-                {
+-                    var instanceEl = new XElement("TypicalInstance", new XAttribute("name", groupName));
+-                    var inst = new XElement("Instance");
+-                    var subVars = new XElement("ConfigurationVariables");
+-
+-                    foreach (var kvp in values)
+-                    {
+-                        if (kvp.Key.StartsWith(groupName + "."))
+-                        {
+-                            string varName = kvp.Key.Substring(groupName.Length + 1);
+-                            subVars.Add(new XElement("ConfigurationVariable",
+-                                new XAttribute("name", varName),
+-                                kvp.Value));
+-                        }
+-                    }
+-                    inst.Add(subVars);
+-                    instanceEl.Add(inst);
+-                    root.Add(instanceEl);
+-                }
+-
+-                var doc = new XDocument(root);
+-                doc.Save(filePath);
+-            }
+-            catch (Exception ex)
+-            {
+-                MessageBox.Show($"├Ñ┬»┬╝├ÑΓÇí┬║ XML ├ªΓÇôΓÇí├ñ┬╗┬╢├Ñ┬ñ┬▒├¿┬┤┬Ñ: {ex.Message}", "├⌐ΓÇ¥Γäó├¿┬»┬»", MessageBoxButton.OK, MessageBoxImage.Error);
+-            }
+-        }
+-
+-        private Dictionary<string, string> ImportVariablesFromXlsx(string filePath, out string configuratorName)
+-        {
+-            var values = new Dictionary<string, string>();
+-            configuratorName = "";
+-            try
+-            {
+-                using (var package = new ExcelPackage(new FileInfo(filePath)))
+-                {
+-                    var sheet = package.Workbook.Worksheets.FirstOrDefault();
+-                    if (sheet != null)
+-                    {
+-                        string a1Val = sheet.Cells[1, 1].Text ?? "";
+-                        if (a1Val.Contains("{"))
+-                        {
+-                            int idx = a1Val.IndexOf('{');
+-                            configuratorName = a1Val.Substring(0, idx).Trim();
+-                        }
+-                        else
+-                        {
+-                            configuratorName = a1Val.Trim();
+-                        }
+-
+-                        int rowCount = sheet.Dimension?.End.Row ?? 0;
+-                        string currentGroup = "";
+-                        List<string> groupHeaders = new List<string>();
+-
+-                        for (int row = 2; row <= rowCount; row++)
+-                        {
+-                            string colA = sheet.Cells[row, 1].Text?.Trim() ?? "";
+-                            string colB = sheet.Cells[row, 2].Text?.Trim() ?? "";
+-
+-                            if (string.IsNullOrEmpty(colA) && string.IsNullOrEmpty(colB))
+-                            {
+-                                currentGroup = "";
+-                                groupHeaders.Clear();
+-                                continue;
+-                            }
+-
+-                            if (string.IsNullOrEmpty(currentGroup) && !string.IsNullOrEmpty(colA) && string.IsNullOrEmpty(colB))
+-                            {
+-                                int colCount = sheet.Dimension.End.Column;
+-                                bool isHeader = false;
+-                                for (int col = 2; col <= colCount; col++)
+-                                {
+-                                    if (!string.IsNullOrEmpty(sheet.Cells[row, col].Text))
+-                                    {
+-                                        isHeader = true;
+-                                        break;
+-                                    }
+-                                }
+-
+-                                if (isHeader)
+-                                {
+-                                    currentGroup = colA;
+-                                    for (int col = 2; col <= colCount; col++)
+-                                    {
+-                                        groupHeaders.Add(sheet.Cells[row, col].Text?.Trim() ?? "");
+-                                    }
+-                                    continue;
+-                                }
+-                            }
+-
+-                            if (!string.IsNullOrEmpty(currentGroup))
+-                            {
+-                                int colCount = sheet.Dimension.End.Column;
+-                                for (int col = 2; col <= Math.Min(colCount, groupHeaders.Count + 1); col++)
+-                                {
+-                                    string header = groupHeaders[col - 2];
+-                                    string val = sheet.Cells[row, col].Text?.Trim() ?? "";
+-                                    if (!string.IsNullOrEmpty(header))
+-                                    {
+-                                        values[header] = val;
+-                                        values[$"{currentGroup}.{header}"] = val;
+-                                    }
+-                                }
+-                            }
+-                            else
+-                            {
+-                                string varName = colA;
+-                                if (colA.Contains("{") && colA.Contains("}"))
+-                                {
+-                                    int start = colA.LastIndexOf('{');
+-                                    int end = colA.LastIndexOf('}');
+-                                    if (end > start)
+-                                    {
+-                                        varName = colA.Substring(start + 1, end - start - 1).Trim();
+-                                    }
+-                                }
+-                                if (!string.IsNullOrEmpty(varName))
+-                                {
+-                                    values[varName] = colB;
+-                                }
+-                            }
+-                        }
+-                    }
+-                }
+-            }
+-            catch (Exception ex)
+-            {
+-                MessageBox.Show($"├¿┬º┬ú├ª┼╛┬É Excel ├ªΓÇôΓÇí├ñ┬╗┬╢├Ñ┬ñ┬▒├¿┬┤┬Ñ: {ex.Message}", "├⌐ΓÇ¥Γäó├¿┬»┬»", MessageBoxButton.OK, MessageBoxImage.Error);
+-            }
+-            return values;
+-        }
+-
+-        private void ExportVariablesToXlsx(string filePath, string configuratorName, Dictionary<string, string> values)
+-        {
+-            try
+-            {
+-                using (var package = new ExcelPackage())
+-                {
+-                    var sheet = package.Workbook.Worksheets.Add("Configuration");
+-
+-                    sheet.Cells[1, 1].Value = configuratorName;
+-                    sheet.Cells[1, 1].Style.Font.Bold = true;
+-
+-                    int row = 2;
+-                    foreach (var kvp in values)
+-                    {
+-                        if (kvp.Key.Contains(".")) continue;
+-                        sheet.Cells[row, 1].Value = kvp.Key;
+-                        sheet.Cells[row, 2].Value = kvp.Value;
+-                        row++;
+-                    }
+-
+-                    var groups = values.Keys.Where(k => k.Contains(".")).Select(k => k.Split('.')[0]).Distinct().ToList();
+-                    foreach (var groupName in groups)
+-                    {
+-                        row++;
+-
+-                        sheet.Cells[row, 1].Value = groupName;
+-                        sheet.Cells[row, 1].Style.Font.Bold = true;
+-
+-                        var groupVars = values.Keys.Where(k => k.StartsWith(groupName + ".")).Select(k => k.Substring(groupName.Length + 1)).ToList();
+-                        for (int i = 0; i < groupVars.Count; i++)
+-                        {
+-                            sheet.Cells[row, i + 2].Value = groupVars[i];
+-                            sheet.Cells[row, i + 2].Style.Font.Bold = true;
+-                        }
+-                        row++;
+-
+-                        sheet.Cells[row, 1].Value = groupName;
+-                        for (int i = 0; i < groupVars.Count; i++)
+-                        {
+-                            string key = $"{groupName}.{groupVars[i]}";
+-                            sheet.Cells[row, i + 2].Value = values[key];
+-                        }
+-                        row++;
+-                    }
+-
+-                    sheet.Cells.AutoFitColumns();
+-                    package.SaveAs(new FileInfo(filePath));
+-                }
+-            }
+-            catch (Exception ex)
+-            {
+-                MessageBox.Show($"├Ñ┬»┬╝├ÑΓÇí┬║ Excel ├ªΓÇôΓÇí├ñ┬╗┬╢├Ñ┬ñ┬▒├¿┬┤┬Ñ: {ex.Message}", "├⌐ΓÇ¥Γäó├¿┬»┬»", MessageBoxButton.OK, MessageBoxImage.Error);
+-            }
+-        }
+-
+-        private void ValidateProjectBuilderForm()
+-        {
+-            if (_selectedTab != 3) return;
+-            bool isValid = true;
+-            string firstError = null;
+-
+-            foreach (var state in _builderStates)
+-            {
+-                foreach (var variable in state.Group.Variables)
+-                {
+-                    if (variable.IsMandatory)
+-                    {
+-                        if (state.RowMap.TryGetValue(variable.Name, out var rowGrid) && rowGrid.Visibility == Visibility.Visible)
+-                        {
+-                            if (state.ControlMap.TryGetValue(variable.Name, out var ctrl))
+-                            {
+-                                string val = "";
+-                                if (ctrl is TextBox txt) val = txt.Text.Trim();
+-                                else if (ctrl is ComboBox cbo) val = cbo.SelectedItem?.ToString() ?? "";
+-                                else if (ctrl is CheckBox chk) val = (chk.IsChecked == true).ToString();
+-
+-                                if (string.IsNullOrEmpty(val))
+-                                {
+-                                    isValid = false;
+-                                    if (firstError == null)
+-                                    {
+-                                        firstError = $"├Ñ┬┐ΓÇª├Ñ┬í┬½├Ñ┬ÅΓÇÜ├ªΓÇó┬░ [{variable.DisplayName ?? variable.Name}] ├ñ┬╕┬ì├¿╞Æ┬╜├ñ┬╕┬║├º┬⌐┬║├»┬╝┬ü";
+-                                    }
+-                                }
+-                            }
+-                        }
+-                    }
+-                }
+-            }
+-
+-            if (!isValid)
+-            {
+-                BtnGenerate.IsEnabled = false;
+-                TxtStatus.Text = firstError;
+-                TxtStatus.Foreground = Brushes.Red;
+-            }
+-            else
+-            {
+-                BtnGenerate.IsEnabled = true;
+-                TxtStatus.Text = "├Ñ┬░┬▒├º┬╗┬¬";
+-                TxtStatus.Foreground = Brushes.Green;
+-            }
+-        }
+-
+-        // ==================== EBUILD STYLE INTERACTIONS & TRIGGERS ====================
+-        private void ItrElements_SelectionChanged(object sender, SelectionChangedEventArgs e)
+-        {
+-            _selectedMacroElement = ItrElements.SelectedItem as MacroElement;
+-            if (_selectedMacroElement != null)
+-            {
+-                ItrVariables.SelectionChanged -= ItrVariables_SelectionChanged;
+-                ItrVariables.SelectedItem = null;
+-                ItrVariables.SelectionChanged += ItrVariables_SelectionChanged;
+-
+-                if (ItrInstances != null)
+-                {
+-                    ItrInstances.SelectionChanged -= ItrInstances_SelectionChanged;
+-                    ItrInstances.SelectedItem = null;
+-                    ItrInstances.SelectionChanged += ItrInstances_SelectionChanged;
+-                }
+-
+-                _selectedConfigVariable = null;
+-                GridVariableDetails.Visibility = Visibility.Collapsed;
+-                if (GridInstanceDetails != null) GridInstanceDetails.Visibility = Visibility.Collapsed;
+-
+-                GridDetailsEmpty.Visibility = Visibility.Collapsed;
+-                GridMacroDetails.Visibility = Visibility.Visible;
+-                GridMacroDetails.DataContext = null;
+-                GridMacroDetails.DataContext = _selectedMacroElement;
+-
+-                // Bind Active Formula Status radio buttons
+-                if (string.IsNullOrEmpty(_selectedMacroElement.IsActiveFormula))
+-                {
+-                    RadStatusAlways.IsChecked = true;
+-                    if (TxtIsActiveFormula != null) TxtIsActiveFormula.IsEnabled = false;
+-                }
+-                else
+-                {
+-                    RadStatusDependent.IsChecked = true;
+-                    if (TxtIsActiveFormula != null) TxtIsActiveFormula.IsEnabled = true;
+-                }
+-
+-                // Bind Position Mode radio buttons
+-                if (string.Equals(_selectedMacroElement.PositionMode, "FromMacro", StringComparison.OrdinalIgnoreCase))
+-                {
+-                    RadPosMacro.IsChecked = true;
+-                    ChkPosSequential.IsChecked = false;
+-                }
+-                else if (string.Equals(_selectedMacroElement.PositionMode, "Absolute", StringComparison.OrdinalIgnoreCase))
+-                {
+-                    RadPosAbsolute.IsChecked = true;
+-                    ChkPosSequential.IsChecked = false;
+-                }
+-                else if (string.Equals(_selectedMacroElement.PositionMode, "Sequential", StringComparison.OrdinalIgnoreCase))
+-                {
+-                    RadPosAbsolute.IsChecked = true;
+-                    ChkPosSequential.IsChecked = true;
+-                }
+-
+-                // Bind Structure checkboxes
+-                ChkStructureMacro.IsChecked = _selectedMacroElement.StructureMappings == null || _selectedMacroElement.StructureMappings.All(m => string.IsNullOrEmpty(m.Value));
+-            }
+-            else
+-            {
+-                GridMacroDetails.Visibility = Visibility.Collapsed;
+-                if (_selectedConfigVariable == null && GridInstanceDetails?.Visibility != Visibility.Visible)
+-                {
+-                    GridDetailsEmpty.Visibility = Visibility.Visible;
+-                }
+-            }
+-        }
+-
+-        private void ItrVariables_SelectionChanged(object sender, SelectionChangedEventArgs e)
+-        {
+-            _selectedConfigVariable = ItrVariables.SelectedItem as ConfigurationVariable;
+-            if (_selectedConfigVariable != null)
+-            {
+-                ItrElements.SelectionChanged -= ItrElements_SelectionChanged;
+-                ItrElements.SelectedItem = null;
+-                ItrElements.SelectionChanged += ItrElements_SelectionChanged;
+-
+-                if (ItrInstances != null)
+-                {
+-                    ItrInstances.SelectionChanged -= ItrInstances_SelectionChanged;
+-                    ItrInstances.SelectedItem = null;
+-                    ItrInstances.SelectionChanged += ItrInstances_SelectionChanged;
+-                }
+-
+-                _selectedMacroElement = null;
+-                GridMacroDetails.Visibility = Visibility.Collapsed;
+-                if (GridInstanceDetails != null) GridInstanceDetails.Visibility = Visibility.Collapsed;
+-
+-                GridDetailsEmpty.Visibility = Visibility.Collapsed;
+-                GridVariableDetails.Visibility = Visibility.Visible;
+-                GridVariableDetails.DataContext = null;
+-                GridVariableDetails.DataContext = _selectedConfigVariable;
+-            }
+-            else
+-            {
+-                GridVariableDetails.Visibility = Visibility.Collapsed;
+-                if (_selectedMacroElement == null && GridInstanceDetails?.Visibility != Visibility.Visible)
+-                {
+-                    GridDetailsEmpty.Visibility = Visibility.Visible;
+-                }
+-            }
+-        }
+-
+-        private void ItrInstances_SelectionChanged(object sender, SelectionChangedEventArgs e)
+-        {
+-            if (ItrInstances == null) return;
+-            var selectedInstance = ItrInstances.SelectedItem as TypicalInstance;
+-            if (selectedInstance != null)
+-            {
+-                ItrElements.SelectionChanged -= ItrElements_SelectionChanged;
+-                ItrElements.SelectedItem = null;
+-                ItrElements.SelectionChanged += ItrElements_SelectionChanged;
+-
+-                ItrVariables.SelectionChanged -= ItrVariables_SelectionChanged;
+-                ItrVariables.SelectedItem = null;
+-                ItrVariables.SelectionChanged += ItrVariables_SelectionChanged;
+-
+-                _selectedMacroElement = null;
+-                _selectedConfigVariable = null;
+-                GridMacroDetails.Visibility = Visibility.Collapsed;
+-                GridVariableDetails.Visibility = Visibility.Collapsed;
+-
+-                GridDetailsEmpty.Visibility = Visibility.Collapsed;
+-                if (GridInstanceDetails != null)
+-                {
+-                    GridInstanceDetails.Visibility = Visibility.Visible;
+-                    GridInstanceDetails.DataContext = null;
+-                    GridInstanceDetails.DataContext = selectedInstance;
+-
+-                    if (string.IsNullOrEmpty(selectedInstance.IsActiveFormula))
+-                    {
+-                        RadInstanceActiveAlways.IsChecked = true;
+-                        if (TxtInstanceActiveFormula != null) TxtInstanceActiveFormula.IsEnabled = false;
+-                    }
+-                    else
+-                    {
+-                        RadInstanceActiveDependent.IsChecked = true;
+-                        if (TxtInstanceActiveFormula != null) TxtInstanceActiveFormula.IsEnabled = true;
+-                    }
+-                }
+-            }
+-            else
+-            {
+-                if (GridInstanceDetails != null) GridInstanceDetails.Visibility = Visibility.Collapsed;
+-                if (_selectedMacroElement == null && _selectedConfigVariable == null)
+-                {
+-                    GridDetailsEmpty.Visibility = Visibility.Visible;
+-                }
+-            }
+-        }
+-
+-        private void RadInstanceActiveAlways_Checked(object sender, RoutedEventArgs e)
+-        {
+-            if (ItrInstances == null) return;
+-            var instance = ItrInstances.SelectedItem as TypicalInstance;
+-            if (instance == null) return;
+-            instance.IsActiveFormula = "";
+-            if (TxtInstanceActiveFormula != null)
+-            {
+-                TxtInstanceActiveFormula.Text = "";
+-                TxtInstanceActiveFormula.IsEnabled = false;
+-            }
+-            MarkDirty();
+-        }
+-
+-        private void RadInstanceActiveDependent_Checked(object sender, RoutedEventArgs e)
+-        {
+-            if (TxtInstanceActiveFormula != null) TxtInstanceActiveFormula.IsEnabled = true;
+-        }
+-
+-        private void BtnCollapseLeft_Click(object sender, RoutedEventArgs e)
+-        {
+-            ColSelectionArea.Width = new GridLength(0);
+-        }
+-
+-        private void BtnExpandLeft_Click(object sender, RoutedEventArgs e)
+-        {
+-            ColSelectionArea.Width = new GridLength(240);
+-        }
+-
+-        private void BtnCollapseRight_Click(object sender, RoutedEventArgs e)
+-        {
+-            ColDetailsArea.Width = new GridLength(0);
+-        }
+-
+-        private void BtnExpandRight_Click(object sender, RoutedEventArgs e)
+-        {
+-            ColDetailsArea.Width = new GridLength(300);
+-        }
+-
+-        private void ColSelectionAreaGrid_SizeChanged(object sender, SizeChangedEventArgs e)
+-        {
+-            if (e.NewSize.Width <= 10)
+-            {
+-                if (LeftSplitter != null) LeftSplitter.Visibility = Visibility.Collapsed;
+-                if (BtnExpandLeft != null) BtnExpandLeft.Visibility = Visibility.Visible;
+-            }
+-            else
+-            {
+-                if (LeftSplitter != null) LeftSplitter.Visibility = Visibility.Visible;
+-                if (BtnExpandLeft != null) BtnExpandLeft.Visibility = Visibility.Collapsed;
+-            }
+-        }
+-
+-        private void ColDetailsAreaGrid_SizeChanged(object sender, SizeChangedEventArgs e)
+-        {
+-            if (e.NewSize.Width <= 10)
+-            {
+-                if (RightSplitter != null) RightSplitter.Visibility = Visibility.Collapsed;
+-                if (BtnExpandRight != null) BtnExpandRight.Visibility = Visibility.Visible;
+-            }
+-            else
+-            {
+-                if (RightSplitter != null) RightSplitter.Visibility = Visibility.Visible;
+-                if (BtnExpandRight != null) BtnExpandRight.Visibility = Visibility.Collapsed;
+-            }
+-        }
+-
+-        private void BtnToggleSearch_Click(object sender, RoutedEventArgs e)
+-        {
+-            if (TxtSearch == null) return;
+-            if (TxtSearch.Visibility == Visibility.Visible)
+-            {
+-                TxtSearch.Visibility = Visibility.Collapsed;
+-                TxtSearch.Text = "";
+-            }
+-            else
+-            {
+-                TxtSearch.Visibility = Visibility.Visible;
+-                TxtSearch.Focus();
+-            }
+-        }
+-
+-        private void BtnAddNewFolder_Click(object sender, RoutedEventArgs e)
+-        {
+-            ShowToast("├Ñ┬╖┬▓├Ñ╦åΓÇ║├Ñ┬╗┬║├ªΓÇô┬░├º┼íΓÇ₧├¿┬ºΓÇ₧├Ñ╦åΓäó├Ñ╦åΓÇá├º┬╗ΓÇ₧├ªΓÇôΓÇí├ñ┬╗┬╢├Ñ┬ñ┬╣");
+-        }
+-
+-        private void BtnElementMenu_Click(object sender, RoutedEventArgs e)
+-        {
+-            var btn = sender as Button;
+-            if (btn == null) return;
+-            var element = btn.DataContext as MacroElement;
+-            if (element == null) return;
+-
+-            var menu = new ContextMenu();
+-            
+-            var previewItem = new MenuItem { Header = "├░┼╕ΓÇÿ┬ü Preview" };
+-            previewItem.Click += (s, ev) => {
+-                char varChar = (char)('A' + element.VariantIndex);
+-                string msg = $"├ª┬¡┬ú├Ñ┼ô┬¿├ª╦£┬╛├º┬ñ┬║├Ñ┬«┬Å├⌐┬óΓÇ₧├¿┬º╦å:\n\n├¿┬╖┬»├Ñ┬╛ΓÇ₧: {element.MacroPath}\n├Ñ┬Å╦£├ñ┬╜ΓÇ£: Variant {varChar}";
+-                MessageBox.Show(msg, "├ª╦£┬╛├º┬ñ┬║├⌐┬óΓÇ₧├¿┬º╦å", MessageBoxButton.OK, MessageBoxImage.Information);
+-            };
+-            
+-            var replaceItem = new MenuItem { Header = "├óΓÇíΓÇª Replace" };
+-            replaceItem.Click += (s, ev) => ShowMacroNavigator(isAddingNew: false, target: element);
+-            
+-            var duplicateItem = new MenuItem { Header = "├░┼╕ΓÇ£ΓÇÿ Duplicate" };
+-            duplicateItem.Click += (s, ev) => {
+-                if (_selectedItem is MacroTypical typical)
+-                {
+-                    int idx = typical.Elements.IndexOf(element);
+-                    string json = JsonConvert.SerializeObject(element);
+-                    var copy = JsonConvert.DeserializeObject<MacroElement>(json);
+-                    if (idx != -1) typical.Elements.Insert(idx + 1, copy);
+-                    else typical.Elements.Add(copy);
+-                    BindElementsList(typical.Elements);
+-                    MarkDirty();
+-                    ShowToast("├Ñ┬╖┬▓├Ñ┬ñ┬ì├Ñ╦å┬╢├Ñ┬«┬Å");
+-                }
+-            };
+-            
+-            var deleteItem = new MenuItem { Header = "├░┼╕ΓÇöΓÇÿ Delete" };
+-            deleteItem.Click += (s, ev) => {
+-                if (_selectedItem is MacroTypical typical)
+-                {
+-                    ShowDeleteConfirmation("├º┬í┬«├¿┬«┬ñ├Ñ╦å┬á├⌐Γäó┬ñ", "├ªΓÇÜ┬¿├º┬í┬«├Ñ┬«┼í├¿┬ª┬ü├Ñ╦å┬á├⌐Γäó┬ñ├ª┬¡┬ñ├Ñ┬«┬Å├ÑΓÇª╞Æ├º┬┤┬á├Ñ┬ÉΓÇö├»┬╝┼╕", () =>
+-                    {
+-                        typical.Elements.Remove(element);
+-                        BindElementsList(typical.Elements);
+-                        MarkDirty();
+-                        ShowToast("├Ñ┬╖┬▓├Ñ╦å┬á├⌐Γäó┬ñ├Ñ┬«┬Å");
+-                    });
+-                }
+-            };
+-            
+-            menu.Items.Add(previewItem);
+-            menu.Items.Add(replaceItem);
+-            menu.Items.Add(duplicateItem);
+-            menu.Items.Add(deleteItem);
+-            
+-            btn.ContextMenu = menu;
+-            menu.IsOpen = true;
+-        }
+-
+-        private void BtnEditSelectionValues_Click(object sender, RoutedEventArgs e)
+-        {
+-            if (_selectedConfigVariable == null) return;
+-            
+-            // Create a simple custom input dialog styled in dark theme
+-            Window dlg = new Window
+-            {
+-                Title = "├º┬╝ΓÇô├¿┬╛ΓÇÿ├⌐┬óΓÇ₧├¿┬«┬╛├ñ┬╕ΓÇ╣├ªΓÇ╣ΓÇ░├⌐Γé¼ΓÇ░├⌐┬í┬╣",
+-                Width = 350,
+-                Height = 320,
+-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+-                Owner = this,
+-                Background = new SolidColorBrush(Color.FromRgb(40, 40, 40)),
+-                Foreground = Brushes.White,
+-                ResizeMode = ResizeMode.NoResize,
+-                WindowStyle = WindowStyle.ToolWindow
+-            };
+-            
+-            Grid grid = new Grid { Margin = new Thickness(15) };
+-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+-            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+-            
+-            TextBlock lbl = new TextBlock 
+-            { 
+-                Text = "├¿┬»┬╖├¿┬╛ΓÇ£├ÑΓÇª┬Ñ├ñ┬╕ΓÇ╣├ªΓÇ╣ΓÇ░├⌐Γé¼ΓÇ░├⌐┬í┬╣(├ª┬»┬Å├¿┬í┼Æ├¿┬╛ΓÇ£├ÑΓÇª┬Ñ├ñ┬╕Γé¼├ñ┬╕┬¬├⌐Γé¼ΓÇ░├⌐┬í┬╣):", 
+-                Foreground = Brushes.White, 
+-                Margin = new Thickness(0, 0, 0, 8),
+-                FontSize = 12
+-            };
+-            grid.Children.Add(lbl);
+-            
+-            TextBox txt = new TextBox 
+-            { 
+-                AcceptsReturn = true, 
+-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+-                Background = new SolidColorBrush(Color.FromRgb(26, 26, 26)),
+-                Foreground = Brushes.White,
+-                BorderBrush = new SolidColorBrush(Color.FromRgb(51, 51, 51)),
+-                BorderThickness = new Thickness(1),
+-                Padding = new Thickness(5),
+-                Text = string.Join(Environment.NewLine, _selectedConfigVariable.PredefinedValues ?? new List<string>())
+-            };
+-            Grid.SetRow(txt, 1);
+-            grid.Children.Add(txt);
+-            
+-            StackPanel btnPanel = new StackPanel 
+-            { 
+-                Orientation = Orientation.Horizontal, 
+-                HorizontalAlignment = HorizontalAlignment.Right, 
+-                Margin = new Thickness(0, 10, 0, 0) 
+-            };
+-            Button btnOk = new Button { Content = "├º┬í┬«├Ñ┬«┼í", Width = 70, Height = 26, Margin = new Thickness(0, 0, 10, 0), Background = new SolidColorBrush(Color.FromRgb(0, 132, 255)), Foreground = Brushes.White };
+-            Button btnCancel = new Button { Content = "├Ñ┬ÅΓÇô├ª┬╢╦å", Width = 70, Height = 26, Background = new SolidColorBrush(Color.FromRgb(60, 60, 60)), Foreground = Brushes.White };
+-            
+-            btnOk.Click += (s, ev) => {
+-                var list = txt.Text.Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries)
+-                                   .Select(line => line.Trim())
+-                                   .Where(line => !string.IsNullOrEmpty(line))
+-                                   .ToList();
+-                _selectedConfigVariable.PredefinedValues = list;
+-                
+-                GridVariableDetails.DataContext = null;
+-                GridVariableDetails.DataContext = _selectedConfigVariable;
+-                
+-                dlg.DialogResult = true;
+-                dlg.Close();
+-                MarkDirty();
+-                ShowToast("├Ñ┬╖┬▓├ªΓÇ║┬┤├ªΓÇô┬░├⌐┬óΓÇ₧├¿┬«┬╛├ñ┬╕ΓÇ╣├ªΓÇ╣ΓÇ░├⌐Γé¼ΓÇ░├⌐┬í┬╣");
+-            };
+-            
+-            btnCancel.Click += (s, ev) => dlg.Close();
+-            
+-            btnPanel.Children.Add(btnOk);
+-            btnPanel.Children.Add(btnCancel);
+-            Grid.SetRow(btnPanel, 2);
+-            grid.Children.Add(btnPanel);
+-            
+-            dlg.Content = grid;
+-            dlg.ShowDialog();
+-        }
+-
+-        private void RadStatusAlways_Checked(object sender, RoutedEventArgs e)
+-        {
+-            if (_selectedMacroElement == null) return;
+-            _selectedMacroElement.IsActiveFormula = "";
+-            if (TxtIsActiveFormula != null)
+-            {
+-                TxtIsActiveFormula.Text = "";
+-                TxtIsActiveFormula.IsEnabled = false;
+-            }
+-            MarkDirty();
+-        }
+-
+-        private void RadStatusDependent_Checked(object sender, RoutedEventArgs e)
+-        {
+-            if (_selectedMacroElement == null) return;
+-            if (TxtIsActiveFormula != null)
+-            {
+-                TxtIsActiveFormula.IsEnabled = true;
+-                TxtIsActiveFormula.Focus();
+-            }
+-        }
+-
+-        private void RadPosMacro_Checked(object sender, RoutedEventArgs e)
+-        {
+-            if (_selectedMacroElement == null) return;
+-            _selectedMacroElement.PositionMode = "FromMacro";
+-            MarkDirty();
+-        }
+-
+-        private void RadPosAbsolute_Checked(object sender, RoutedEventArgs e)
+-        {
+-            if (_selectedMacroElement == null) return;
+-            _selectedMacroElement.PositionMode = "Absolute";
+-            MarkDirty();
+-        }
+-
+-        private void ChkPosSequential_Checked(object sender, RoutedEventArgs e)
+-        {
+-            if (_selectedMacroElement == null) return;
+-            bool isChecked = (sender as CheckBox)?.IsChecked == true;
+-            if (isChecked)
+-            {
+-                _selectedMacroElement.PositionMode = "Sequential";
+-            }
+-            else
+-            {
+-                _selectedMacroElement.PositionMode = RadPosAbsolute?.IsChecked == true ? "Absolute" : "FromMacro";
+-            }
+-            MarkDirty();
+-        }
+-
+-        public void ShowToast(string message)
+-        {
+-            if (ToastText == null || ToastBorder == null) return;
+-            ToastText.Text = message;
+-            ToastBorder.Visibility = Visibility.Visible;
+-
+-            if (_toastTimer == null)
+-            {
+-                _toastTimer = new System.Windows.Threading.DispatcherTimer();
+-                _toastTimer.Interval = TimeSpan.FromSeconds(3.5);
+-                _toastTimer.Tick += (s, e) => {
+-                    ToastBorder.Visibility = Visibility.Collapsed;
+-                    _toastTimer.Stop();
+-                };
+-            }
+-            else
+-            {
+-                _toastTimer.Stop();
+-            }
+-            _toastTimer.Start();
+-        }
+-
+-        private void BtnCloseToast_Click(object sender, RoutedEventArgs e)
+-        {
+-            if (ToastBorder != null) ToastBorder.Visibility = Visibility.Collapsed;
+-            _toastTimer?.Stop();
+-        }
+-
+-        private void UpdateBreadcrumbs()
+-        {
+-            if (TxtBreadcrumbs == null) return;
+-            
+-            string tabName = "Macro Typicals";
+-            if (_selectedTab == 0) tabName = "Macro Typicals";
+-            else if (_selectedTab == 1) tabName = "Typical Groups";
+-            else if (_selectedTab == 2) tabName = "Configurators";
+-            else if (_selectedTab == 3) tabName = "Project Builder";
+-            
+-            string itemName = "";
+-            if (_selectedItem != null)
+-            {
+-                if (_selectedItem is MacroTypical t) itemName = t.Name;
+-                else if (_selectedItem is TypicalGroup g) itemName = g.Name;
+-                else if (_selectedItem is Configurator c) itemName = c.Name;
+-            }
+-            
+-            if (string.IsNullOrEmpty(itemName))
+-            {
+-                TxtBreadcrumbs.Text = $"Designer > eBuild_Macro_GettingStarted > {tabName}";
+-            }
+-            else
+-            {
+-                TxtBreadcrumbs.Text = $"Designer > eBuild_Macro_GettingStarted > {tabName} > {itemName}";
+-            }
+-        }
+-
+-        // ==================== NEW OVERLAY MODAL HANDLERS & HELPERS ====================
+-        private void BtnAddScriptTypical_Click(object sender, RoutedEventArgs e)
+-        {
+-            e.Handled = true;
+-            ShowToast("Script Typicals are not supported yet.");
+-        }
+-
+-
+-
+-        private void BtnAddConfigGroup_Click(object sender, RoutedEventArgs e)
+-        {
+-            e.Handled = true; // Prevent Expander toggle!
+-            if (!(_selectedItem is Configurator config)) return;
+-
+-            if (ModalAddElements == null || TxtModalAddTitle == null || TxtModalAddSubtitle == null || LstModalAddElements == null) return;
+-
+-            TxtModalAddTitle.Text = "Add elements";
+-            TxtModalAddSubtitle.Text = "Select elements to be added to the configurator.";
+-
+-            // Populate all available TypicalGroups
+-            _allModalAddElements.Clear();
+-
+-            foreach (var tg in _db.TypicalGroups)
+-            {
+-                bool alreadyAdded = config.TypicalGroupRefs != null && config.TypicalGroupRefs.Contains(tg.Name);
+-                if (alreadyAdded) continue; // Exclude already associated ones
+-
+-                _allModalAddElements.Add(new CheckableAddElement
+-                {
+-                    Name = tg.Name,
+-                    Type = "TypicalGroup",
+-                    Icon = "├░┼╕ΓÇÿ┬Ñ",
+-                    IsChecked = false
+-                });
+-            }
+-
+-            foreach (var mt in _db.MacroTypicals)
+-            {
+-                string wrappedName = "TG_" + mt.Name;
+-                bool alreadyAdded = config.TypicalGroupRefs != null && config.TypicalGroupRefs.Contains(wrappedName);
+-                if (alreadyAdded) continue;
+-
+-                _allModalAddElements.Add(new CheckableAddElement
+-                {
+-                    Name = mt.Name,
+-                    Type = "MacroTypical",
+-                    Icon = "├░┼╕┬º┬┐",
+-                    IsChecked = false
+-                });
+-            }
+-
+-            TxtModalAddSearch.Text = "";
+-            FilterModalAddElements();
+-
+-            ModalAddElements.Visibility = Visibility.Visible;
+-            UpdateModalAddSelectedCount();
+-        }
+-
+-        private Action _onDeleteConfirmed;
+-
+-        private void ShowDeleteConfirmation(string title, string message, Action onConfirm)
+-        {
+-            if (ModalConfirmDelete == null || TxtModalDeleteTitle == null || TxtModalDeleteMessage == null) return;
+-            TxtModalDeleteTitle.Text = title;
+-            TxtModalDeleteMessage.Text = message;
+-            _onDeleteConfirmed = onConfirm;
+-            ModalConfirmDelete.Visibility = Visibility.Visible;
+-        }
+-
+-        private void BtnCloseDeleteModal_Click(object sender, RoutedEventArgs e)
+-        {
+-            if (ModalConfirmDelete != null)
+-            {
+-                ModalConfirmDelete.Visibility = Visibility.Collapsed;
+-            }
+-            _onDeleteConfirmed = null;
+-        }
+-
+-        private void BtnModalDeleteConfirm_Click(object sender, RoutedEventArgs e)
+-        {
+-            if (ModalConfirmDelete != null)
+-            {
+-                ModalConfirmDelete.Visibility = Visibility.Collapsed;
+-            }
+-            var callback = _onDeleteConfirmed;
+-            _onDeleteConfirmed = null;
+-            callback?.Invoke();
+-        }
+-
+-        private void BtnCloseCreateModal_Click(object sender, RoutedEventArgs e)
+-        {
+-            if (ModalCreateItem != null)
+-            {
+-                ModalCreateItem.Visibility = Visibility.Collapsed;
+-            }
+-        }
+-
+-        private void TxtModalCreateName_TextChanged(object sender, TextChangedEventArgs e)
+-        {
+-            if (BtnModalCreateConfirm == null || TxtModalCreateName == null) return;
+-
+-            string text = TxtModalCreateName.Text.Trim();
+-            bool isValid = !string.IsNullOrEmpty(text);
+-
+-            if (_selectedTab == 0 && text == "MT_") isValid = false;
+-            else if (_selectedTab == 1 && text == "TG_") isValid = false;
+-
+-            BtnModalCreateConfirm.IsEnabled = isValid;
+-        }
+-
+-        private void BtnModalCreateConfirm_Click(object sender, RoutedEventArgs e)
+-        {
+-            if (TxtModalCreateName == null) return;
+-            string newName = TxtModalCreateName.Text.Trim();
+-            if (string.IsNullOrEmpty(newName)) return;
+-
+-            bool isUnique = true;
+-            if (_selectedTab == 0)
+-            {
+-                isUnique = !_db.MacroTypicals.Any(t => string.Equals(t.Name, newName, StringComparison.OrdinalIgnoreCase));
+-            }
+-            else if (_selectedTab == 1)
+-            {
+-                isUnique = !_db.TypicalGroups.Any(g => string.Equals(g.Name, newName, StringComparison.OrdinalIgnoreCase));
+-            }
+-            else if (_selectedTab == 2)
+-            {
+-                isUnique = !_db.Configurators.Any(c => string.Equals(c.Name, newName, StringComparison.OrdinalIgnoreCase));
+-            }
+-
+-            if (!isUnique)
+-            {
+-                MessageBox.Show($"Name '{newName}' already exists. Please choose a different name.", "Naming Conflict", MessageBoxButton.OK, MessageBoxImage.Warning);
+-                return;
+-            }
+-
+-            object createdItem = null;
+-            string itemTypeName = "";
+-
+-            if (_selectedTab == 0)
+-            {
+-                var mt = new MacroTypical { Name = newName };
+-                _db.MacroTypicals.Add(mt);
+-                createdItem = mt;
+-                itemTypeName = "Macro Typical";
+-            }
+-            else if (_selectedTab == 1)
+-            {
+-                var tg = new TypicalGroup { Name = newName };
+-                _db.TypicalGroups.Add(tg);
+-                createdItem = tg;
+-                itemTypeName = "Typical Group";
+-            }
+-            else if (_selectedTab == 2)
+-            {
+-                var cfg = new Configurator { Name = newName };
+-                _db.Configurators.Add(cfg);
+-                createdItem = cfg;
+-                itemTypeName = "configurator";
+-            }
+-
+-            if (createdItem != null)
+-            {
+-                _selectedItem = createdItem;
+-                RefreshSidebar();
+-                LstSidebarItems.SelectedItem = _selectedItem;
+-                UpdateWorkspaceSelection();
+-                MarkDirty();
+-
+-                ShowToast($"The {itemTypeName} '{newName}' was created");
+-            }
+-
+-            ModalCreateItem.Visibility = Visibility.Collapsed;
+-        }
+-
+-        private void BtnCloseAddModal_Click(object sender, RoutedEventArgs e)
+-        {
+-            if (ModalAddElements != null)
+-            {
+-                ModalAddElements.Visibility = Visibility.Collapsed;
+-            }
+-        }
+-
+-        private void TxtModalAddSearch_TextChanged(object sender, TextChangedEventArgs e)
+-        {
+-            FilterModalAddElements();
+-        }
+-
+-        private void CboModalAddFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+-        {
+-            FilterModalAddElements();
+-        }
+-
+-        private void ChkModalElement_Checked(object sender, RoutedEventArgs e)
+-        {
+-            UpdateModalAddSelectedCount();
+-        }
+-
+-        private void ChkModalElement_Unchecked(object sender, RoutedEventArgs e)
+-        {
+-            UpdateModalAddSelectedCount();
+-        }
+-
+-        private void FilterModalAddElements()
+-        {
+-            if (LstModalAddElements == null) return;
+-
+-            string search = TxtModalAddSearch?.Text?.Trim()?.ToLower() ?? "";
+-            int filterIndex = CboModalAddFilter?.SelectedIndex ?? 0;
+-
+-            var filtered = _allModalAddElements.Where(item => {
+-                if (filterIndex == 1 && item.Type != "MacroTypical") return false;
+-                if (filterIndex == 2 && item.Type != "TypicalGroup") return false;
+-
+-                if (string.IsNullOrEmpty(search)) return true;
+-                return item.Name.ToLower().Contains(search);
+-            }).ToList();
+-
+-            LstModalAddElements.ItemsSource = null;
+-            LstModalAddElements.ItemsSource = filtered;
+-        }
+-
+-        private void UpdateModalAddSelectedCount()
+-        {
+-            if (TxtModalAddSelectedCount == null || BtnModalAddConfirm == null) return;
+-
+-            int checkedCount = _allModalAddElements.Count(item => item.IsChecked);
+-            TxtModalAddSelectedCount.Text = $"Elements selected: {checkedCount}";
+-            BtnModalAddConfirm.IsEnabled = checkedCount > 0;
+-        }
+-
+-        private void BtnModalAddConfirm_Click(object sender, RoutedEventArgs e)
+-        {
+-            var checkedItems = _allModalAddElements.Where(item => item.IsChecked).ToList();
+-            if (checkedItems.Count == 0) return;
+-
+-            if (_selectedItem is TypicalGroup group)
+-            {
+-                int addedCount = 0;
+-                foreach (var item in checkedItems)
+-                {
+-                    var instance = new TypicalInstance
+-                    {
+-                        TargetName = item.Name,
+-                        Type = item.Type,
+-                        IsActiveFormula = ""
+-                    };
+-
+-                    List<ConfigurationVariable> childVars = null;
+-                    if (item.Type.Equals("MacroTypical", StringComparison.OrdinalIgnoreCase))
+-                    {
+-                        var child = _db.MacroTypicals.FirstOrDefault(t => string.Equals(t.Name, item.Name, StringComparison.OrdinalIgnoreCase));
+-                        childVars = child?.Variables;
+-                    }
+-                    else if (item.Type.Equals("TypicalGroup", StringComparison.OrdinalIgnoreCase))
+-                    {
+-                        var child = _db.TypicalGroups.FirstOrDefault(g => string.Equals(g.Name, item.Name, StringComparison.OrdinalIgnoreCase));
+-                        childVars = child?.Variables;
+-                    }
+-
+-                    if (childVars != null)
+-                    {
+-                        foreach (var v in childVars)
+-                        {
+-                            instance.VariableMappings.Add(new MappingEntry(v.Name, ""));
+-                        }
+-                    }
+-
+-                    group.Instances.Add(instance);
+-                    addedCount++;
+-                }
+-
+-                BindInstancesList(group.Instances);
+-                MarkDirty();
+-                ShowToast($"{addedCount} elements were added.");
+-            }
+-            else if (_selectedItem is Configurator config)
+-            {
+-                int addedCount = 0;
+-                bool showWarning = false;
+-                List<string> warnings = new List<string>();
+-
+-                foreach (var item in checkedItems)
+-                {
+-                    if (item.Type == "TypicalGroup")
+-                    {
+-                        if (config.TypicalGroupRefs == null) config.TypicalGroupRefs = new List<string>();
+-                        if (!config.TypicalGroupRefs.Contains(item.Name))
+-                        {
+-                            config.TypicalGroupRefs.Add(item.Name);
+-                            addedCount++;
+-                        }
+-                    }
+-                    else if (item.Type == "MacroTypical")
+-                    {
+-                        string wrappedGroupName = "TG_" + item.Name;
+-                        var tg = _db.TypicalGroups.FirstOrDefault(g => string.Equals(g.Name, wrappedGroupName, StringComparison.OrdinalIgnoreCase));
+-                        if (tg == null)
+-                        {
+-                            tg = new TypicalGroup { Name = wrappedGroupName };
+-                            var mt = _db.MacroTypicals.FirstOrDefault(t => string.Equals(t.Name, item.Name, StringComparison.OrdinalIgnoreCase));
+-                            if (mt != null)
+-                            {
+-                                foreach (var v in mt.Variables)
+-                                {
+-                                    tg.Variables.Add(new ConfigurationVariable
+-                                    {
+-                                        Name = v.Name,
+-                                        DisplayName = v.DisplayName,
+-                                        Type = v.Type,
+-                                        IsMandatory = v.IsMandatory,
+-                                        VisibilityFormula = v.VisibilityFormula,
+-                                        PredefinedValues = new List<string>(v.PredefinedValues)
+-                                    });
+-                                }
+-                            }
+-
+-                            var inst = new TypicalInstance
+-                            {
+-                                TargetName = item.Name,
+-                                Type = "MacroTypical",
+-                                IsActiveFormula = ""
+-                            };
+-                            if (mt != null)
+-                            {
+-                                foreach (var v in mt.Variables)
+-                                {
+-                                    inst.VariableMappings.Add(new MappingEntry(v.Name, "=" + v.Name));
+-                                }
+-                            }
+-                            tg.Instances.Add(inst);
+-                            _db.TypicalGroups.Add(tg);
+-                        }
+-
+-                        if (config.TypicalGroupRefs == null) config.TypicalGroupRefs = new List<string>();
+-                        if (!config.TypicalGroupRefs.Contains(tg.Name))
+-                        {
+-                            config.TypicalGroupRefs.Add(tg.Name);
+-                            addedCount++;
+-                            showWarning = true;
+-                            warnings.Add($"Macro Typical '{item.Name}' cannot be added directly to a configurator. It has been wrapped in a new Typical Group '{tg.Name}'.");
+-                        }
+-                    }
+-                }
+-
+-                BindConfigGroupsList(config);
+-                MarkDirty();
+-
+-                if (showWarning)
+-                {
+-                    MessageBox.Show(string.Join("\n\n", warnings), "Wrapper Info", MessageBoxButton.OK, MessageBoxImage.Information);
+-                }
+-                ShowToast($"{addedCount} elements were added.");
+-            }
+-
+-            ModalAddElements.Visibility = Visibility.Collapsed;
+-        }
+-    }
+-
+-    public class CheckableAddElement : System.ComponentModel.INotifyPropertyChanged
+-    {
+-        private bool _isChecked;
+-        public bool IsChecked
+-        {
+-            get => _isChecked;
+-            set 
+-            { 
+-                if (_isChecked != value)
+-                {
+-                    _isChecked = value; 
+-                    OnPropertyChanged(nameof(IsChecked)); 
+-                }
+-            }
+-        }
+-        public string Name { get; set; }
+-        public string Type { get; set; }
+-        public string Icon { get; set; }
+-
+-        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+-        protected void OnPropertyChanged(string name) => PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(name));
+-    }
+-
+-    public class TypicalTargetInfo
+-    {
+-        public string Name { get; set; }
+-        public string Type { get; set; }
+-    }
+-
+-    public class CheckableTypicalGroup
+-    {
+-        public string Name { get; set; }
+-        public bool IsChecked { get; set; }
+-    }
+-
+-    public class StringListConverter : System.Windows.Data.IValueConverter
+-    {
+-        public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+-        {
+-            if (value is List<string> list && list != null)
+-            {
+-                return string.Join(", ", list);
+-            }
+-            return "";
+-        }
+-
+-        public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+-        {
+-            if (value is string str)
+-            {
+-                return str.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+-                          .Select(s => s.Trim())
+-                          .Where(s => !string.IsNullOrEmpty(s))
+-                          .ToList();
+-            }
+-            return new List<string>();
+-        }
+-    }
+-
+-    public class MacroElementHeaderConverter : System.Windows.Data.IMultiValueConverter
+-    {
+-        public object Convert(object[] values, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+-        {
+-            if (values == null || values.Length < 2) return "";
+-
+-            var element = values[1] as MacroElement;
+-            if (element == null) return "";
+-
+-            int index = 0;
+-            if (values[0] is ConfiguratorWindow window)
+-            {
+-                if (window._selectedItem is MacroTypical typical)
+-                {
+-                    index = typical.Elements.IndexOf(element);
+-                }
+-            }
+-            if (index < 0) index = 0;
+-
+-            string formattedPath = "";
+-            if (!string.IsNullOrEmpty(element.MacroPath))
+-            {
+-                string clean = element.MacroPath;
+-                if (clean.StartsWith("$("))
+-                {
+-                    int idx = clean.IndexOf(')');
+-                    if (idx != -1 && idx < clean.Length - 1)
+-                    {
+-                        clean = clean.Substring(idx + 1);
+-                    }
+-                }
+-                clean = clean.TrimStart('\\', '/');
+-                var parts = clean.Split(new char[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries).ToList();
+-                formattedPath = string.Join(" ├é┬╗ ", parts);
+-            }
+-            else
+-            {
+-                formattedPath = "├ª┼ô┬¬├ª┼ÆΓÇí├Ñ┬«┼í├Ñ┬«┬Å├ªΓÇôΓÇí├ñ┬╗┬╢";
+-            }
+-
+-            char varChar = (char)('A' + element.VariantIndex);
+-            return $"{index}: EPLAN_Macro ├é┬╗ {formattedPath} ├é┬╗ Variant '{varChar}'";
+-        }
+-
+-        public object[] ConvertBack(object value, Type[] targetTypes, object parameter, System.Globalization.CultureInfo culture)
+-        {
+-            throw new NotImplementedException();
+-        }
+-    }
+-
+-    public class EmpPathToVisibilityConverter : System.Windows.Data.IValueConverter
+-    {
+-        public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+-        {
+-            if (value is string path && !string.IsNullOrEmpty(path))
+-            {
+-                string trim = path.Trim();
+-                if (trim.EndsWith(".ema", StringComparison.OrdinalIgnoreCase) || trim.EndsWith(".ems", StringComparison.OrdinalIgnoreCase))
+-                {
+-                    return System.Windows.Visibility.Collapsed;
+-                }
+-            }
+-            return System.Windows.Visibility.Visible;
+-        }
+-
+-        public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+-        {
+-            throw new NotImplementedException();
+-        }
+-    }
+-
+-    public class MacroPathToMarginConverter : System.Windows.Data.IValueConverter
+-    {
+-        public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+-        {
+-            if (value is string path && !string.IsNullOrEmpty(path))
+-            {
+-                string trim = path.Trim();
+-                if (trim.EndsWith(".ema", StringComparison.OrdinalIgnoreCase) || trim.EndsWith(".ems", StringComparison.OrdinalIgnoreCase))
+-                {
+-                    return new System.Windows.Thickness(20, 0, 0, 12);
+-                }
+-            }
+-            return new System.Windows.Thickness(0, 0, 0, 12);
+-        }
+-
+-        public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+-        {
+-            throw new NotImplementedException();
+-        }
+-    }
+-
+-    public class MacroPathToFileNameConverter : System.Windows.Data.IValueConverter
+-    {
+-        public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+-        {
+-            if (value is string path && !string.IsNullOrEmpty(path))
+-            {
+-                try
+-                {
+-                    return System.IO.Path.GetFileName(path);
+-                }
+-                catch
+-                {
+-                    return path;
+-                }
+-            }
+-            return "├ª┼ô┬¬├ª┼ÆΓÇí├Ñ┬«┼í├Ñ┬«┬Å├ªΓÇôΓÇí├ñ┬╗┬╢";
+-        }
+-
+-        public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+-        {
+-            throw new NotImplementedException();
+-        }
+     }
+-}
+\ No newline at end of file
++}

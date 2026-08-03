@@ -1,22 +1,37 @@
 using System;
 using System.Collections.Generic;
+using Newtonsoft.Json;
 
 namespace AutoSchematicConfigurator.EplAddIn.Tool
 {
     /// <summary>
     /// Key-Value mapping entry class designed to be easily serialized/deserialized in JSON.
     /// </summary>
-    public class MappingEntry
+    public class MappingEntry : System.ComponentModel.INotifyPropertyChanged
     {
-        public string Key { get; set; }
-        public string Value { get; set; }
+        private string _key;
+        public string Key 
+        { 
+            get => _key; 
+            set { if (_key != value) { _key = value; OnPropertyChanged(nameof(Key)); } } 
+        }
+
+        private string _value;
+        public string Value 
+        { 
+            get => _value; 
+            set { if (_value != value) { _value = value; OnPropertyChanged(nameof(Value)); } } 
+        }
+
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+        protected void OnPropertyChanged(string propertyName) => PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
 
         public MappingEntry() { }
 
         public MappingEntry(string key, string value)
         {
-            Key = key;
-            Value = value;
+            _key = key;
+            _value = value;
         }
     }
 
@@ -71,10 +86,18 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
     {
         public string MacroPath { get; set; }
         public int VariantIndex { get; set; }
+        public int RepresentationType { get; set; }
         public string IsActiveFormula { get; set; }
         public string PositionMode { get; set; } // "FromMacro", "Absolute", "Sequential"
         public double X { get; set; }
         public double Y { get; set; }
+        public string XFormula { get; set; } = null;
+        public string YFormula { get; set; } = null;
+        public string Direction { get; set; } // "To the right", "To the left", "Up", "Down"
+        public string Offset { get; set; } // Kept as string to support formulas later, currently numeric
+        public string MacroType { get; set; } = "";  // "WindowMacro"/"PageMacro"/"SymbolMacro"
+        public bool IsPrePlanning { get; set; } = false;
+        [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)]
         public List<MappingEntry> StructureMappings { get; set; }
         public List<MappingEntry> VariableMappings { get; set; }
 
@@ -82,10 +105,13 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
         {
             MacroPath = "";
             VariantIndex = 0;
+            RepresentationType = 1;
             IsActiveFormula = "";
             PositionMode = "FromMacro";
             X = 0.0;
             Y = 0.0;
+            Direction = "To the right";
+            Offset = "0";
             StructureMappings = new List<MappingEntry>
             {
                 new MappingEntry("==", ""), // Functional assignment
@@ -156,7 +182,10 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
     {
         public string Unit { get; set; } // "Metric" or "Imperial"
         public bool UseSubSegmentLogic { get; set; }
+        [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)]
         public List<string> SelectedLanguages { get; set; }
+
+        [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)]
         public List<string> AvailableStructureIdentifiers { get; set; }
 
         public LibrarySettings()
@@ -177,6 +206,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
         public List<TypicalGroup> TypicalGroups { get; set; }
         public List<Configurator> Configurators { get; set; }
         public LibrarySettings Settings { get; set; }
+        public List<ScriptTypical> Scripts { get; set; } = new List<ScriptTypical>();
 
         public ConfiguratorData()
         {
@@ -185,5 +215,14 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
             Configurators = new List<Configurator>();
             Settings = new LibrarySettings();
         }
+    }
+
+    public class ScriptTypical
+    {
+        public string Name { get; set; } = "";
+        public string ScriptContent { get; set; } = "";
+        public string TriggerPoint { get; set; } = "AfterGenerate";
+        public string IsActiveFormula { get; set; } = "true";
+        public int Order { get; set; } = 0;
     }
 }

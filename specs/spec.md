@@ -90,3 +90,54 @@ Rules and value mapping expressions utilize the NCalc expression library. The ex
 - **Syntax & Compilation**: Code must compile clean against EPLAN DLLs under C# (.NET Framework 4.8).
 - **Rule Parser Accuracy**: Complex mathematical, string, and lookup expressions evaluate to correct outputs.
 - **EPLAN Integration**: Ribbon registers menu item; WPF forms display properly; schematics pages are generated on-demand; transaction rolls back completely on execution error.
+
+---
+
+## 7. Production Usability & Compatibility Specifications
+
+### 7.1 EPLAN Document Type (&) Support
+- **Requirement**: The system must fully support EPLAN's standard Document Type (`&`) identifier in the page structure settings.
+- **Acceptance Criteria**:
+  - The UI mapping for "Document type [&]" must map to the `DESIGNATION_DOCTYPE` property in EPLAN instead of being converted to a user-defined `#` structure.
+  - The target page name must format as `&DOCTYPE` in the project hierarchy representation.
+
+### 7.2 Window Macro Placeholder Isolation
+- **Requirement**: When placing multiple window macros on the same page, the configuration variables of the current macro element must NOT overwrite the placeholders of other macros already on that page.
+- **Acceptance Criteria**:
+  - The generator must filter the placeholders to process by comparing them against the array of newly inserted objects returned by `oInsert.WindowMacro`.
+  - Placeholders from previously inserted macros must remain untouched.
+
+### 7.3 Extended Engineering Formulas
+- **Requirement**: The Rules Engine must support standard engineering helpers used in typical configurations.
+- **Acceptance Criteria**:
+  - The engine must support `IsAvailable(varName)`, `If(cond, true, false)`, `IsNullEmpty(str)`, `Contains(str, sub)`, `StartsWith(str, sub)`, and `EndsWith(str, sub)`.
+
+### 7.4 Culture-Aware Variable Conversion & Default Fallbacks
+- **Requirement**: The configuration values must be converted to their destination types (Boolean, Integer, Double) in a culture-invariant and casting-safe manner to prevent failures on systems with varying regional formats.
+- **Requirement**: If a parent Typical Group does not define a mapping for a child variable, the generator must fall back to the child variable's `DefaultValue` rather than returning `null`/`false`.
+
+### 7.5 Representation Type & Position Mode Overload Mapping
+- **Requirement**: When inserting a Window Macro, the system must pass the macro element's `RepresentationType` (Multi-line, Single-line, Overview, etc.) to EPLAN to ensure the correct drawing style is selected.
+- **Requirement**: If the position mode is set to `"Absolute"`, the system must use EPLAN's `Insert.MoveKind.Absolute` mode to place the macro at exact page coordinates.
+
+### 7.6 Direct Placeholder Variable Mapping Compatibility
+- **Requirement**: The placeholder application block must match mapping keys that correspond directly to the placeholder variable name (non-prefixed), in addition to prefixed keys (`PlaceholderName : VariableName`).
+
+### 7.7 Mandatory Variable Generation-Time Validation
+- **Requirement**: The generation engine must validate that all visible mandatory variables are populated, raising a descriptive exception to prevent generating corrupt schematics.
+
+### 7.8 Drag/Resize Layout Jitter & Scrollbar Fix
+- **Requirement**: Resizing or adjusting the navigator width must not trigger a layout loop, flickering horizontal scrollbars, or page jumping.
+- **Acceptance Criteria**:
+  - The Macros DataGrid must have its horizontal scrollbar explicitly disabled (`HorizontalScrollBarVisibility="Disabled"`).
+  - Character ellipsis text trimming must be utilized for columns containing long text (such as file paths) to ensure smooth scaling without requiring horizontal scrolling.
+
+### 7.9 Drag-Drop Reordering Null Safety
+- **Requirement**: Releasing the mouse button during or after a drag-drop reordering gesture must not crash the application under any circumstances.
+- **Acceptance Criteria**:
+  - The mouse release handler (`General_PreviewMouseLeftButtonUp`) must safely check for null on the floating card (`_dragFloatingCard == null`) and abort drag execution cleanly without throwing exceptions.
+
+### 7.10 Column Header Separators Removal
+- **Requirement**: Column headers of the Macros DataGrid must not show vertical divider/separator lines, matching a cleaner, modern layout.
+- **Acceptance Criteria**:
+  - The custom DataGrid `ColumnHeaderStyle` must collapse/hide vertical separators (`SeparatorVisibility="Collapsed"`, `SeparatorBrush="Transparent"`).

@@ -2,11 +2,21 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.modernwpf.com/2019"
-        Title="库设置 (Library Settings)" Height="450" Width="420"
+        Title="生成器设置 (Builder Settings)" Height="450" Width="420"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
-        Background="#1F1F1F"
+        Background="{StaticResource WorkspaceBg}"
+        Foreground="White"
+        ui:WindowHelper.UseModernWindowStyle="True"
         ui:ThemeManager.RequestedTheme="Dark"
         FontFamily="Segoe UI, Microsoft YaHei">
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Theme.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Window.Resources>
+    
     <Grid Margin="20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/> <!-- Title -->
@@ -15,43 +25,43 @@
         </Grid.RowDefinitions>
 
         <!-- Title -->
-        <TextBlock Grid.Row="0" Text="配置库属性设置" FontSize="16" FontWeight="Bold" Foreground="White" Margin="0,0,0,15"/>
+        <TextBlock Grid.Row="0" Text="配置生成器属性设置" FontSize="16" FontWeight="Bold" Foreground="White" Margin="0,0,0,15"/>
 
         <!-- Content scrollable -->
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,0,0,15">
             <StackPanel>
                 <!-- Unit Settings -->
-                <TextBlock Text="计量单位 (Unit)" FontWeight="SemiBold" Foreground="#94A3B8" Margin="0,0,0,5"/>
-                <ComboBox x:Name="CboUnit" Height="30" HorizontalAlignment="Stretch" Margin="0,0,0,15" SelectedIndex="0">
+                <TextBlock Text="计量单位 (Unit)" FontWeight="SemiBold" Foreground="{StaticResource TextMuted}" Margin="0,0,0,5"/>
+                <ComboBox x:Name="CboUnit" Height="30" HorizontalAlignment="Stretch" Margin="0,0,0,15" SelectedIndex="0" Background="{StaticResource ListPaneBg}" Foreground="White" BorderBrush="{StaticResource BorderDark}">
                     <ComboBoxItem Content="Metric (公制 - mm)" Tag="Metric"/>
                     <ComboBoxItem Content="Imperial (英制 - inch)" Tag="Imperial"/>
                 </ComboBox>
 
                 <!-- Sub-segment Logic Settings -->
-                <TextBlock Text="逻辑选项" FontWeight="SemiBold" Foreground="#94A3B8" Margin="0,0,0,5"/>
-                <CheckBox x:Name="ChkSubSegment" Content="启用 NFPA 子段划分逻辑 (Sub-segment Logic)" Margin="0,0,0,15"/>
+                <TextBlock Text="逻辑选项" FontWeight="SemiBold" Foreground="{StaticResource TextMuted}" Margin="0,0,0,5"/>
+                <CheckBox x:Name="ChkSubSegment" Content="启用 NFPA 子段划分逻辑 (Sub-segment Logic)" Margin="0,0,0,15" Foreground="White"/>
 
                 <!-- Multilingual Settings -->
-                <TextBlock Text="表单翻译语言 (Selected Languages)" FontWeight="SemiBold" Foreground="#94A3B8" Margin="0,0,0,5"/>
-                <Border BorderBrush="#2D2D2D" BorderThickness="1" Background="#1A1A1A" CornerRadius="4" Padding="8" Margin="0,0,0,15">
+                <TextBlock Text="表单翻译语言 (Selected Languages)" FontWeight="SemiBold" Foreground="{StaticResource TextMuted}" Margin="0,0,0,5"/>
+                <Border BorderBrush="{StaticResource BorderDark}" BorderThickness="1" Background="{StaticResource SidebarBg}" CornerRadius="4" Padding="8" Margin="0,0,0,15">
                     <StackPanel x:Name="PanelLanguages">
-                        <CheckBox Content="中文 (zh-CN)" IsChecked="True" Tag="zh-CN" Margin="0,2"/>
-                        <CheckBox Content="English (en-US)" IsChecked="True" Tag="en-US" Margin="0,2"/>
-                        <CheckBox Content="Deutsch (de-DE)" Tag="de-DE" Margin="0,2"/>
-                        <CheckBox Content="日本語 (ja-JP)" Tag="ja-JP" Margin="0,2"/>
-                        <CheckBox Content="Español (es-ES)" Tag="es-ES" Margin="0,2"/>
+                        <CheckBox Content="中文 (zh-CN)" IsChecked="True" Tag="zh-CN" Margin="0,2" Foreground="White"/>
+                        <CheckBox Content="English (en-US)" IsChecked="True" Tag="en-US" Margin="0,2" Foreground="White"/>
+                        <CheckBox Content="Deutsch (de-DE)" Tag="de-DE" Margin="0,2" Foreground="White"/>
+                        <CheckBox Content="日本語 (ja-JP)" Tag="ja-JP" Margin="0,2" Foreground="White"/>
+                        <CheckBox Content="Español (es-ES)" Tag="es-ES" Margin="0,2" Foreground="White"/>
                     </StackPanel>
                 </Border>
 
                 <!-- Structure Identifiers Selection -->
-                <TextBlock Text="启用的结构标识符 (Structure Identifiers)" FontWeight="SemiBold" Foreground="#94A3B8" Margin="0,0,0,5"/>
-                <Border BorderBrush="#2D2D2D" BorderThickness="1" Background="#1A1A1A" CornerRadius="4" Padding="8">
+                <TextBlock Text="启用的结构标识符 (Structure Identifiers)" FontWeight="SemiBold" Foreground="{StaticResource TextMuted}" Margin="0,0,0,5"/>
+                <Border BorderBrush="{StaticResource BorderDark}" BorderThickness="1" Background="{StaticResource SidebarBg}" CornerRadius="4" Padding="8">
                     <StackPanel x:Name="PanelStructures">
-                        <CheckBox Content="高层代号 (==)" IsChecked="True" Tag="==" Margin="0,2"/>
-                        <CheckBox Content="位置代号 (=)" IsChecked="True" Tag="=" Margin="0,2"/>
-                        <CheckBox Content="安装地点 (+)" IsChecked="True" Tag="+" Margin="0,2"/>
-                        <CheckBox Content="自定义结构 (UserDefined)" IsChecked="True" Tag="UserDefined" Margin="0,2"/>
-                        <CheckBox Content="目标图纸页名 (PageName)" IsChecked="True" Tag="PageName" Margin="0,2"/>
+                        <CheckBox Content="高层代号 (==)" IsChecked="True" Tag="==" Margin="0,2" Foreground="White"/>
+                        <CheckBox Content="位置代号 (=)" IsChecked="True" Tag="=" Margin="0,2" Foreground="White"/>
+                        <CheckBox Content="安装地点 (+)" IsChecked="True" Tag="+" Margin="0,2" Foreground="White"/>
+                        <CheckBox Content="自定义结构 (UserDefined)" IsChecked="True" Tag="UserDefined" Margin="0,2" Foreground="White"/>
+                        <CheckBox Content="目标图纸页名 (PageName)" IsChecked="True" Tag="PageName" Margin="0,2" Foreground="White"/>
                     </StackPanel>
                 </Border>
             </StackPanel>
@@ -59,8 +69,9 @@
 
         <!-- Buttons -->
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Content="取消" Width="80" Height="30" Margin="0,0,10,0" IsCancel="True"/>
-            <Button Content="保存" Style="{StaticResource AccentButtonStyle}" Width="80" Height="30" Click="BtnSave_Click" IsDefault="True"/>
+            <Button Content="版本历史" Width="80" Height="30" Margin="0,0,10,0" Click="BtnVersionHistory_Click" Background="{StaticResource ButtonBg}" Foreground="White" BorderBrush="{StaticResource BorderDark}" BorderThickness="1"/>
+            <Button Content="取消" Width="80" Height="30" Margin="0,0,10,0" IsCancel="True" Background="{StaticResource ButtonBg}" Foreground="White" BorderBrush="{StaticResource BorderDark}" BorderThickness="1"/>
+            <Button Content="保存" Width="80" Height="30" Click="BtnSave_Click" IsDefault="True" Background="{StaticResource AccentBlue}" Foreground="White" BorderThickness="0"/>
         </StackPanel>
     </Grid>
 </Window>
