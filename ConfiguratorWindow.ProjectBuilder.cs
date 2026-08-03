@@ -696,7 +696,15 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                 _db.Settings = new LibrarySettings();
             }
 
-            var dialog = new LibrarySettingsDialog(_db.Settings);
+            var dialog = new LibrarySettingsDialog(_db.Settings, _db, restored =>
+            {
+                _db = restored ?? new ConfiguratorData();
+                if (_db.Settings == null) _db.Settings = new LibrarySettings();
+                InvalidateTypicalTargetsCache();
+                RefreshSidebar();
+                UpdateWorkspaceSelection();
+                MarkDirty();
+            });
             dialog.Owner = this;
             if (dialog.ShowDialog() == true)
             {

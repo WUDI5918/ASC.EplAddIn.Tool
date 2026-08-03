@@ -21,6 +21,9 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
         /// </summary>
         public bool WasRestored { get; private set; }
 
+        private readonly ConfiguratorData _currentDb;
+        private readonly Action<ConfiguratorData> _onRestored;
+
         // 用于 DataGrid 显示的包装类
         private class VersionDisplayItem
         {
@@ -32,9 +35,11 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
             public string StatusText => IsPublished ? "已发布" : "草稿";
         }
 
-        public VersionHistoryDialog()
+        public VersionHistoryDialog(ConfiguratorData currentDb = null, Action<ConfiguratorData> onRestored = null)
         {
             InitializeComponent();
+            _currentDb = currentDb;
+            _onRestored = onRestored;
             LoadVersions();
         }
 
@@ -65,18 +70,17 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
 
             try
             {
-                // 加载当前数据库
-                string dbPath = ConfiguratorService.GetDatabasePath();
-                ConfiguratorData db;
-                if (File.Exists(dbPath))
+                // Use the in-memory database when provided, so unsaved edits are snapshotted.
+                ConfiguratorData db = _currentDb;
+                if (db == null)
                 {
-                    string json = File.ReadAllText(dbPath);
-                    db = JsonConvert.DeserializeObject<ConfiguratorData>(json) ?? new ConfiguratorData();
-                }
-                else
-                {
-                    MessageBox.Show("当前库文件不存在，无法创建版本。", "错误", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return;
+                    string dbPath = ConfiguratorService.GetDatabasePath();
+                    if (!File.Exists(dbPath))
+                    {
+                        MessageBox.Show("当前库文件不存在，无法创建版本。", "错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        return;
+                    }
+                    db = JsonConvert.DeserializeObject<ConfiguratorData>(File.ReadAllText(dbPath)) ?? new ConfiguratorData();
                 }
 
                 var version = LibraryVersionService.CreateVersion(db, description);
@@ -117,6 +121,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
 
                 RestoredData = data;
                 WasRestored = true;
+                _onRestored?.Invoke(data);
                 MessageBox.Show($"已还原到版本 v{item.VersionNumber}。", "成功", MessageBoxButton.OK, MessageBoxImage.Information);
                 DialogResult = true;
                 Close();

@@ -10,10 +10,15 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
     {
         public LibrarySettings Settings { get; private set; }
 
-        public LibrarySettingsDialog(LibrarySettings settings)
+        private readonly ConfiguratorData _currentDb;
+        private readonly Action<ConfiguratorData> _onVersionRestored;
+
+        public LibrarySettingsDialog(LibrarySettings settings, ConfiguratorData currentDb = null, Action<ConfiguratorData> onVersionRestored = null)
         {
             InitializeComponent();
             Settings = settings ?? new LibrarySettings();
+            _currentDb = currentDb;
+            _onVersionRestored = onVersionRestored;
             LoadSettings();
         }
 
@@ -55,9 +60,13 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
 
         private void BtnVersionHistory_Click(object sender, RoutedEventArgs e)
         {
-            var dlg = new VersionHistoryDialog();
+            var dlg = new VersionHistoryDialog(_currentDb, _onVersionRestored);
             dlg.Owner = this;
-            dlg.ShowDialog();
+            if (dlg.ShowDialog() == true && dlg.WasRestored && dlg.RestoredData != null)
+            {
+                Settings = dlg.RestoredData.Settings ?? new LibrarySettings();
+                LoadSettings();
+            }
         }
 
         private void BtnSave_Click(object sender, RoutedEventArgs e)
