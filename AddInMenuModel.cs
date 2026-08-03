@@ -410,7 +410,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                 {
                     foreach (Project openProj in pm.OpenProjects)
                     {
-                        if (string.Equals(openProj.ProjectName, targetProjectName, StringComparison.OrdinalIgnoreCase))
+                        if (string.Equals(openProj.ProjectName, targetProjectName, StringComparison.OrdinalIgnoreCase) && !overwrite)
                         {
                             project = openProj;
                             break;
@@ -424,15 +424,31 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                         {
                             if (overwrite)
                             {
+                                if (string.IsNullOrEmpty(template) || !File.Exists(template))
+                                {
+                                    ConfiguratorService.LogDebug("Error: overwrite requires a valid template to recreate the project.");
+                                    return false;
+                                }
+
                                 try
                                 {
+                                    foreach (Project openProj in pm.OpenProjects)
+                                    {
+                                        if (string.Equals(openProj.ProjectName, targetProjectName, StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            openProj.Close();
+                                            break;
+                                        }
+                                    }
+
                                     string dirPath = projectPath.Substring(0, projectPath.Length - 4) + ".edb";
                                     if (Directory.Exists(dirPath)) Directory.Delete(dirPath, true);
                                     if (File.Exists(projectPath)) File.Delete(projectPath);
                                 }
                                 catch (Exception dex)
                                 {
-                                    ConfiguratorService.LogDebug($"Warning: Failed to delete existing project for overwrite: {dex.Message}");
+                                    ConfiguratorService.LogDebug($"Error: Failed to delete existing project for overwrite: {dex.Message}");
+                                    return false;
                                 }
                             }
                             else
