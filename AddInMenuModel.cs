@@ -240,6 +240,8 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
 
                 // C2: Load parameters from JSON file if specified
                 JObject jsonParams = null;
+                bool? jsonIncremental = null; // t9: optional per-run "Incremental" option
+                bool? jsonAbortOnFirstError = null; // t9: optional per-run "AbortOnFirstError" option
                 if (!string.IsNullOrEmpty(jsonfile) && File.Exists(jsonfile))
                 {
                     ConfiguratorService.LogDebug($"Loading parameters from JSON file: {jsonfile}");
@@ -257,6 +259,15 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                         libraryName = jsonParams["LibraryName"].ToString();
                     if (jsonParams["StorageLocation"] != null && string.IsNullOrEmpty(storagelocation))
                         storagelocation = jsonParams["StorageLocation"].ToString();
+
+                    // t9: per-run generation options (optional). Parsed here, applied immediately
+                    // before GenerateConfigurator below; the dry-run path is not affected.
+                    jsonIncremental = ParseOptionalBool(jsonParams, "Incremental");
+                    jsonAbortOnFirstError = ParseOptionalBool(jsonParams, "AbortOnFirstError");
+                    if (jsonIncremental.HasValue)
+                        ConfiguratorService.LogDebug($"JSON parameter 'Incremental' = {jsonIncremental.Value}");
+                    if (jsonAbortOnFirstError.HasValue)
+                        ConfiguratorService.LogDebug($"JSON parameter 'AbortOnFirstError' = {jsonAbortOnFirstError.Value}");
 
                     ConfiguratorService.LogDebug($"JSON params loaded: configuratorName='{configuratorName}', template='{template}', targetProjectName='{targetProjectName}'");
                 }
@@ -286,6 +297,9 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                     ConfiguratorService.LogDebug("Error: Failed to deserialize database.");
                     return false;
                 }
+
+                // Repair null collections and duplicate structure mappings from hand-edited JSON.
+                db.Normalize();
 
                 // Find Configurator
                 var configurator = db.Configurators.FirstOrDefault(c => string.Equals(c.Name, configuratorName, StringComparison.OrdinalIgnoreCase));
@@ -320,7 +334,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                         if (group == null) continue;
 
                         var parameters = new Dictionary<string, object>();
-                        foreach (var variable in group.Variables)
+                        foreach (var variable in group.Variables ?? new List<ConfigurationVariable>())
                         {
                             object val = null;
 
@@ -366,39 +380,26 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                     ConfiguratorService.LogDebug("Dryrun mode: validating parameters...");
                     ConfiguratorService.Log("Info", $"[DryRun] 开始验证配置器 '{configuratorName}' 的参数...");
 
-                    try
+                    bool preflightOk = RunPreflightAndLog(db, configurator, groupParameters, "[DryRun] ", configuratorName);
+                    if (preflightOk)
                     {
-                        if (configurator.TypicalGroupRefs != null)
-                        {
-                            foreach (string groupRef in configurator.TypicalGroupRefs)
-                            {
-                                var group = db.TypicalGroups.FirstOrDefault(g => string.Equals(g.Name, groupRef, StringComparison.OrdinalIgnoreCase));
-                                if (group == null) continue;
-
-                                Dictionary<string, object> groupParams = null;
-                                groupParameters.TryGetValue(group.Name, out groupParams);
-
-                                ConfiguratorService.ValidateVariables(group.Name, group.Variables, groupParams ?? new Dictionary<string, object>());
-                                ConfiguratorService.Log("Info", $"[DryRun] 组 '{group.Name}' 参数验证通过。");
-                            }
-                        }
-
-                        ConfiguratorService.Log("Success", $"[DryRun] 配置器 '{configuratorName}' 所有参数验证通过！");
                         ConfiguratorService.LogDebug("Dryrun validation completed successfully.");
-
-                        // C3: Write generation logs to file in silent mode
-                        ConfiguratorService.WriteGenerationLogToFile();
-                        return true;
                     }
-                    catch (Exception valEx)
-                    {
-                        ConfiguratorService.Log("Error", $"[DryRun] 参数验证失败: {valEx.Message}");
-                        ConfiguratorService.LogDebug($"Dryrun validation failed: {valEx.Message}");
 
-                        // C3: Write generation logs to file in silent mode
-                        ConfiguratorService.WriteGenerationLogToFile();
-                        return false;
-                    }
+                    // C3: Write generation logs to file in silent mode (both pass and fail paths)
+                    ConfiguratorService.WriteGenerationLogToFile();
+                    return preflightOk;
+                }
+
+                // t11: the real generation path runs the same pre-flight validation before it
+                // opens/creates or overwrites the target project, so a configurator with errors
+                // can never mutate the project.
+                if (!RunPreflightAndLog(db, configurator, groupParameters, "", configuratorName))
+                {
+                    ConfiguratorService.LogDebug("Preflight failed; generation aborted without touching the project.");
+                    // C3: Write logs to file in silent mode
+                    ConfiguratorService.WriteGenerationLogToFile();
+                    return false;
                 }
 
                 // 2. Open or Create target project
@@ -491,15 +492,18 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                     return false;
                 }
 
-                // 4. Execute generation in safe transaction
-                Page activePage = (project.Pages != null && project.Pages.Length > 0) ? project.Pages[0] : null;
-                if (activePage == null)
-                {
-                    activePage = new Page();
-                    PagePropertyList pagePropList = new PagePropertyList();
-                    pagePropList.PAGE_COUNTER = "1";
-                    activePage.Create(project, DocumentTypeManager.DocumentType.Circuit, pagePropList);
-                }
+                // 4. Execute generation in a safe transaction. Note (t11): no page is created here.
+                // When the target project has no pages, GenerateConfigurator creates a default
+                // template page itself inside its own Transaction (see
+                // ConfiguratorService.GenerateConfigurator), so creating one here would both
+                // duplicate that logic and run outside any transaction.
+
+                // t9: apply per-run generation options from the JSON parameter file (absent keys fall
+                // back to the safe defaults). GenerateConfigurator restores both switches to their safe
+                // defaults in its finally block, so UI-triggered generations never inherit these values.
+                ConfiguratorService.IncrementalGeneration = jsonIncremental ?? false;
+                ConfiguratorService.AbortOnFirstError = jsonAbortOnFirstError ?? true;
+                ConfiguratorService.LogDebug($"Generation options applied: IncrementalGeneration={ConfiguratorService.IncrementalGeneration}, AbortOnFirstError={ConfiguratorService.AbortOnFirstError}");
 
                 ConfiguratorService.LogDebug("Starting Configurator generation...");
                 string result = ConfiguratorService.GenerateConfigurator(configurator, db, groupParameters);
@@ -517,6 +521,14 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                 ConfiguratorService.WriteGenerationLogToFile();
                 return false;
             }
+            finally
+            {
+                // t9: restore the generation options to their safe defaults on every exit path
+                // (normal completion, early return before GenerateConfigurator's own finally,
+                // or exception), so a per-run option set above never leaks into a later
+                // UI-triggered generation. Idempotent with the entry-point finally blocks.
+                ConfiguratorService.ResetGenerationOptions();
+            }
         }
 
         public void GetActionProperties(ref ActionProperties actionProperties)
@@ -528,6 +540,63 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
             Name = "ExecuteCogineerProjectBuilderAction";
             Ordinal = 30;
             return true;
+        }
+
+        /// <summary>
+        /// Runs pre-flight validation (<see cref="PreflightValidator"/>) and logs every issue with its
+        /// severity, prefixed with <paramref name="prefix"/>. Returns true when the run may proceed
+        /// (no errors); false when errors were found or validation itself failed, in which case the
+        /// caller must abort without generating. Shared by the dry-run mode and the real generation
+        /// path (t11).
+        /// </summary>
+        private static bool RunPreflightAndLog(
+            ConfiguratorData db,
+            Configurator configurator,
+            Dictionary<string, Dictionary<string, object>> groupParameters,
+            string prefix,
+            string configuratorName)
+        {
+            try
+            {
+                var report = PreflightValidator.ValidateConfigurator(db, configurator, groupParameters);
+                foreach (var issue in report.Issues)
+                {
+                    string level = issue.Severity == PreflightSeverity.Error ? "Error"
+                        : (issue.Severity == PreflightSeverity.Warning ? "Warning" : "Info");
+                    ConfiguratorService.Log(level, $"{prefix}{issue.Message}");
+                }
+
+                if (report.HasErrors)
+                {
+                    int errorCount = report.Issues.Count(i => i.Severity == PreflightSeverity.Error);
+                    ConfiguratorService.Log("Error", $"{prefix}预检失败，共 {errorCount} 个错误。");
+                    return false;
+                }
+
+                ConfiguratorService.Log("Success", $"{prefix}配置器 '{configuratorName}' 预检通过！");
+                return true;
+            }
+            catch (Exception valEx)
+            {
+                ConfiguratorService.Log("Error", $"{prefix}参数验证失败: {valEx.Message}");
+                ConfiguratorService.LogDebug($"{prefix}Preflight validation failed: {valEx.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Reads an optional boolean value from the JSON parameter object. Accepts JSON booleans
+        /// (true/false) and bool strings ("true"/"false"/"1"/"0"). Returns null when the key is
+        /// absent or not parseable, so callers fall back to the safe defaults (t9).
+        /// </summary>
+        private static bool? ParseOptionalBool(JObject jsonParams, string key)
+        {
+            if (jsonParams == null || jsonParams[key] == null) return null;
+            var token = jsonParams[key];
+            if (token.Type == JTokenType.Boolean) return token.Value<bool>();
+            if (bool.TryParse(token.ToString(), out bool parsed)) return parsed;
+            ConfiguratorService.LogDebug($"JSON parameter '{key}' 值 '{token}' 不是合法布尔值，使用默认值。");
+            return null;
         }
 
         private object ConvertValueType(string rawVal, string type)

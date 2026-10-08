@@ -86,7 +86,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
 
         public static string GenerateConfigurator(Configurator configurator, ConfiguratorData db, Dictionary<string, Dictionary<string, object>> groupParameters)
         {
-            GenerationLogs.Clear();
+            ClearGenerationLogs();
             Log("Info", $"开始为配置器 '{configurator.Name}' 生成原理图...");
 
             // 1. Get EPLAN Context
@@ -149,6 +149,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
             var initialPages = new HashSet<string>(activeProject.Pages.Select(p => p.Name));
 
             using (Transaction transaction = new TransactionManager().CreateTransaction())
+            using (LockingStep lockingStep = new LockingStep())
             {
                 try
                 {
@@ -170,14 +171,18 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                             }
                             else
                             {
-                                // Fallback: build default parameters
+                                // Fallback: build default parameters from each variable's DefaultValue
                                 parameters = new Dictionary<string, object>();
-                                foreach (var variable in group.Variables)
+                                foreach (var variable in group.Variables ?? new List<ConfigurationVariable>())
                                 {
-                                    if (variable.Type.Equals("Boolean", StringComparison.OrdinalIgnoreCase))
-                                        parameters[variable.Name] = false;
-                                    else
-                                        parameters[variable.Name] = null;
+                                    string defVal = variable.DefaultValue ?? "";
+                                    object evaluated = defVal;
+                                    if (defVal.StartsWith("="))
+                                    {
+                                        try { evaluated = EvaluateExpression(defVal, parameters); }
+                                        catch { evaluated = defVal; }
+                                    }
+                                    parameters[variable.Name] = ConvertToVariableType(evaluated, variable.Type);
                                 }
                             }
 
@@ -199,6 +204,13 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                     string errMsg = $"错误：生成失败，项目已回滚！\n异常信息: {ex.Message}";
                     Log("Error", errMsg);
                     throw;
+                }
+                finally
+                {
+                    // t9: restore per-run generation options to their safe defaults so a value
+                    // set by the silent action (JSON "Incremental"/"AbortOnFirstError") never
+                    // leaks into later UI-triggered generations.
+                    ResetGenerationOptions();
                 }
             }
         }
@@ -256,6 +268,24 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
             // R4: Validate top-level group's own variables
             ValidateVariables(group.Name, group.Variables, parameters);
 
+            // P-1: variant gating — skip or abort based on variant selection, remember the selection.
+            var gate = ResolveVariantGate(group.Variants, parameters, out var selectedVariant);
+            switch (gate)
+            {
+                case VariantGateResult.NoVariants:
+                    break;
+                case VariantGateResult.Selected:
+                    Log("Info", $"变体选择 '{group.Name}': 命中变体 '{selectedVariant.Name}'");
+                    if (parameters != null) parameters["__SelectedVariant"] = selectedVariant.Name;
+                    break;
+                case VariantGateResult.NoMatch:
+                    Log("Warning", $"变体选择 '{group.Name}': 无变体命中条件，跳过该规则组的生成。");
+                    return;
+                case VariantGateResult.MultipleMatches:
+                    Log("Error", $"变体选择 '{group.Name}': 多个变体命中条件，中止生成（与预检一致）。");
+                    throw new InvalidOperationException($"变体选择 '{group.Name}': 多个变体命中条件，无法确定唯一变体。");
+            }
+
             foreach (var instance in group.Instances)
             {
                 // 1. Evaluate IsActiveFormula using parent parameters
@@ -287,6 +317,10 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                 var childParameters = new Dictionary<string, object>();
                 if (childVars != null)
                 {
+                    // Evaluate child variables in dependency order so a formula referencing
+                    // another child variable sees its already-computed value.
+                    childVars = SortVariablesByDependency(childVars);
+
                     var evalContext = new Dictionary<string, object>(parameters ?? new Dictionary<string, object>());
                     foreach (var variable in childVars)
                     {
@@ -357,7 +391,8 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
             var mergedParameters = new Dictionary<string, object>(parameters ?? new Dictionary<string, object>());
             if (typical.Variables != null)
             {
-                foreach (var variable in typical.Variables)
+                // Evaluate defaults in dependency order.
+                foreach (var variable in SortVariablesByDependency(typical.Variables))
                 {
                     if (!mergedParameters.ContainsKey(variable.Name) || mergedParameters[variable.Name] == null)
                     {
@@ -375,10 +410,32 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
             }
             parameters = mergedParameters;
 
+            // P-1: variant gating — skip or abort based on variant selection, remember the selection.
+            // Evaluated against the merged parameters so variant conditions can reference the
+            // typical's own variables (with defaults applied).
+            var gate = ResolveVariantGate(typical.Variants, parameters, out var selectedVariant);
+            switch (gate)
+            {
+                case VariantGateResult.NoVariants:
+                    break;
+                case VariantGateResult.Selected:
+                    Log("Info", $"变体选择 '{typical.Name}': 命中变体 '{selectedVariant.Name}'");
+                    parameters["__SelectedVariant"] = selectedVariant.Name;
+                    break;
+                case VariantGateResult.NoMatch:
+                    Log("Warning", $"变体选择 '{typical.Name}': 无变体命中条件，跳过该宏规则的生成。");
+                    return;
+                case VariantGateResult.MultipleMatches:
+                    Log("Error", $"变体选择 '{typical.Name}': 多个变体命中条件，中止生成（与预检一致）。");
+                    throw new InvalidOperationException($"变体选择 '{typical.Name}': 多个变体命中条件，无法确定唯一变体。");
+            }
+
             ExecuteScriptSteps(db.Scripts, "BeforeGenerate", parameters, LogDebug);
 
             foreach (var element in typical.Elements)
             {
+                try
+                {
                 // Evaluate active condition
                 bool isActive = EvaluateActiveFormula(element.IsActiveFormula, parameters);
                 Log("Info", $"评估宏元素 '{element.MacroPath}' 激活状态: {isActive} (条件: '{element.IsActiveFormula}')");
@@ -451,19 +508,16 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                         var pages = pm.Pages;
                         if (pages != null && pages.Length > 0)
                         {
-                            string functionalAssignment = (db?.Settings == null || db.Settings.AvailableStructureIdentifiers == null || db.Settings.AvailableStructureIdentifiers.Contains("==")) ? (element.StructureMappings.FirstOrDefault(s => s.Key == "==")?.Value ?? "") : "";
-                            string functionDesignation = (db?.Settings == null || db.Settings.AvailableStructureIdentifiers == null || db.Settings.AvailableStructureIdentifiers.Contains("=")) ? (element.StructureMappings.FirstOrDefault(s => s.Key == "=")?.Value ?? "") : "";
-                            string locationDesignation = (db?.Settings == null || db.Settings.AvailableStructureIdentifiers == null || db.Settings.AvailableStructureIdentifiers.Contains("+")) ? (element.StructureMappings.FirstOrDefault(s => s.Key == "+")?.Value ?? "") : "";
-                            string documentType = (db?.Settings == null || db.Settings.AvailableStructureIdentifiers == null || db.Settings.AvailableStructureIdentifiers.Contains("&")) ? (element.StructureMappings.FirstOrDefault(s => s.Key == "&")?.Value ?? "") : "";
-                            string userDefined = (db?.Settings == null || db.Settings.AvailableStructureIdentifiers == null || db.Settings.AvailableStructureIdentifiers.Contains("UserDefined") || db.Settings.AvailableStructureIdentifiers.Contains("#")) ? (element.StructureMappings.FirstOrDefault(s => s.Key == "UserDefined" || s.Key == "#")?.Value ?? "") : "";
-                            string pageNameBase = (db?.Settings == null || db.Settings.AvailableStructureIdentifiers == null || db.Settings.AvailableStructureIdentifiers.Contains("PageName")) ? (element.StructureMappings.FirstOrDefault(s => s.Key == "PageName")?.Value ?? "") : "";
+                            var structure = PageStructure.FromStructureMappings(element.StructureMappings, db?.Settings);
 
-                            functionalAssignment = EvaluateValueFormula(functionalAssignment, parameters);
-                            functionDesignation = EvaluateValueFormula(functionDesignation, parameters);
-                            locationDesignation = EvaluateValueFormula(locationDesignation, parameters);
-                            documentType = EvaluateValueFormula(documentType, parameters);
-                            userDefined = EvaluateValueFormula(userDefined, parameters);
-                            pageNameBase = EvaluateValueFormula(pageNameBase, parameters);
+                            structure.FunctionalAssignment = EvaluateValueFormula(structure.FunctionalAssignment, parameters);
+                            structure.FunctionDesignation = EvaluateValueFormula(structure.FunctionDesignation, parameters);
+                            structure.LocationDesignation = EvaluateValueFormula(structure.LocationDesignation, parameters);
+                            structure.DocumentType = EvaluateValueFormula(structure.DocumentType, parameters);
+                            structure.UserDefined = EvaluateValueFormula(structure.UserDefined, parameters);
+                            structure.PageName = EvaluateValueFormula(structure.PageName, parameters);
+
+                            string pageNameBase = structure.PageName;
 
                             for (int i = 0; i < pages.Length; i++)
                             {
@@ -482,15 +536,29 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                                 }
 
                                 // Delete existing page in target project to prevent overwrite collisions
-                                string fullTargetPageName = FormatPageName(functionalAssignment, functionDesignation, locationDesignation, documentType, userDefined, targetPageName);
+                                structure.PageName = targetPageName;
+                                string fullTargetPageName = structure.ToFullPageName();
 
                                 // Always remove a pre-existing page with this name so the
                                 // page macro owns its pages; placeholders below must target
                                 // the freshly inserted pages, not an earlier macro's pages.
+                                // In incremental mode we keep the existing page instead.
+                                // Ordering note: this removal runs immediately before the
+                                // Insert.PageMacro below, inside the same outer transaction.
+                                // Known limitation (t9): in skip mode (AbortOnFirstError=false) the
+                                // run still commits a single transaction at the end, so a page
+                                // deleted here stays deleted even when a later element fails and
+                                // is skipped — the deletion is not rolled back. Fully safe skip
+                                // mode needs per-element transactions (out of scope; left to the
+                                // architecture follow-up), hence the warning below.
                                 Page existingTarget = activeProject.Pages.FirstOrDefault(pageObj => pageObj.Name.Equals(fullTargetPageName, StringComparison.OrdinalIgnoreCase));
-                                if (existingTarget != null)
+                                if (existingTarget != null && !IncrementalGeneration)
                                 {
                                     Log("Info", $"  检测到目标页面已存在 '{fullTargetPageName}'，正在清理以重新生成...");
+                                    if (!AbortOnFirstError)
+                                    {
+                                        Log("Warning", $"  跳过模式 (AbortOnFirstError=false)：页面 '{fullTargetPageName}' 将被删除并在单个事务内提交，即使后续元素失败被跳过，该删除也不会回滚。");
+                                    }
                                     try
                                     {
                                         existingTarget.Remove();
@@ -504,16 +572,16 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
 
                                 try
                                 {
-                                    if (!string.IsNullOrWhiteSpace(functionalAssignment))
-                                        p.Properties[Eplan.EplApi.DataModel.Properties.Page.DESIGNATION_FUNCTIONALASSIGNMENT] = functionalAssignment.Trim();
-                                    if (!string.IsNullOrWhiteSpace(functionDesignation))
-                                        p.Properties[Eplan.EplApi.DataModel.Properties.Page.DESIGNATION_PLANT] = functionDesignation.Trim();
-                                    if (!string.IsNullOrWhiteSpace(locationDesignation))
-                                        p.Properties[Eplan.EplApi.DataModel.Properties.Page.DESIGNATION_LOCATION] = locationDesignation.Trim();
-                                    if (!string.IsNullOrWhiteSpace(documentType))
-                                        p.Properties[Eplan.EplApi.DataModel.Properties.Page.DESIGNATION_DOCTYPE] = documentType.Trim();
-                                    if (!string.IsNullOrWhiteSpace(userDefined))
-                                        p.Properties[Eplan.EplApi.DataModel.Properties.Page.DESIGNATION_USERDEFINED] = userDefined.Trim();
+                                    if (!string.IsNullOrWhiteSpace(structure.FunctionalAssignment))
+                                        p.Properties[Eplan.EplApi.DataModel.Properties.Page.DESIGNATION_FUNCTIONALASSIGNMENT] = structure.FunctionalAssignment.Trim();
+                                    if (!string.IsNullOrWhiteSpace(structure.FunctionDesignation))
+                                        p.Properties[Eplan.EplApi.DataModel.Properties.Page.DESIGNATION_PLANT] = structure.FunctionDesignation.Trim();
+                                    if (!string.IsNullOrWhiteSpace(structure.LocationDesignation))
+                                        p.Properties[Eplan.EplApi.DataModel.Properties.Page.DESIGNATION_LOCATION] = structure.LocationDesignation.Trim();
+                                    if (!string.IsNullOrWhiteSpace(structure.DocumentType))
+                                        p.Properties[Eplan.EplApi.DataModel.Properties.Page.DESIGNATION_DOCTYPE] = structure.DocumentType.Trim();
+                                    if (!string.IsNullOrWhiteSpace(structure.UserDefined))
+                                        p.Properties[Eplan.EplApi.DataModel.Properties.Page.DESIGNATION_USERDEFINED] = structure.UserDefined.Trim();
                                     if (!string.IsNullOrWhiteSpace(targetPageName))
                                         p.Properties[Eplan.EplApi.DataModel.Properties.Page.PAGE_COUNTER] = targetPageName.Trim();
                                 }
@@ -523,12 +591,31 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                                 }
                             }
 
+                            // Snapshot the pages that existed before THIS insertion (t8: placeholder
+                            // isolation). Taken after the delete-old-pages loop above, so in full mode
+                            // the removed pages are already gone and the freshly inserted same-name
+                            // pages count as "new"; in incremental mode the kept old pages stay in the
+                            // snapshot and are excluded from placeholder processing below.
+                            var oldPageNames = new HashSet<string>(activeProject.Pages.Select(p => p.Name), StringComparer.OrdinalIgnoreCase);
+
                             Insert oInsert = new Insert();
+                            // Insert.PageMacro(pm, activePage, activeProject, true): the 4th parameter
+                            // ("newPage") means the macro's pages are inserted as NEW pages in the
+                            // project with the structure/counter properties assigned above. It is not
+                            // a merge/replace operation: a same-name page that already exists is NOT
+                            // overwritten by EPLAN. In full mode such pages were removed explicitly
+                            // above, so the insert creates the pages this macro owns; in incremental
+                            // mode the old page is deliberately kept, so the insert may collide with
+                            // it (duplicate/renamed pages) — the re-find below must therefore only
+                            // touch pages that are new in this run.
                             oInsert.PageMacro(pm, activePage, activeProject, true);
                             placedCount++;
                             Log("Success", $"成功插入页宏: '{resolvedPath}'");
 
-                            // Re-find target pages in active project to apply placeholders
+                            // Re-find target pages in active project to apply placeholders. Only pages
+                            // that did NOT exist before this insertion belong to this macro: matching a
+                            // pre-existing page (incremental mode keeps it) would apply this element's
+                            // variable mappings to old content — a silent mis-replacement (t2-H3).
                             foreach (var p in pm.Pages)
                             {
                                 string targetPageName = pageNameBase;
@@ -545,14 +632,29 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                                     }
                                 }
 
-                                string fullTargetPageName = FormatPageName(functionalAssignment, functionDesignation, locationDesignation, documentType, userDefined, targetPageName);
+                                structure.PageName = targetPageName;
+                                string fullTargetPageName = structure.ToFullPageName();
 
                                 Page insertedPage = activeProject.Pages.FirstOrDefault(pageObj => pageObj.Name.Equals(fullTargetPageName, StringComparison.OrdinalIgnoreCase));
-                                if (insertedPage != null)
+                                if (insertedPage == null)
                                 {
-                                    pagesToProcess.Add(insertedPage);
-                                    lastEmpPage = insertedPage;
+                                    // Name-based lookup failed (e.g. EPLAN's canonical page name differs
+                                    // from the concatenated string, or the page was auto-renamed after a
+                                    // collision). The page was inserted but cannot be located — report it
+                                    // instead of silently skipping placeholder application.
+                                    Log("Warning", $"  页宏插入后未能定位页面 '{fullTargetPageName}'，该页的占位符不会被本元素处理。");
+                                    continue;
                                 }
+                                if (!IsNewlyAddedPageName(insertedPage.Name, oldPageNames))
+                                {
+                                    // The lookup hit a page that existed before this insertion
+                                    // (incremental mode keeps existing pages): do not touch it — it is
+                                    // not this macro's content.
+                                    Log("Warning", $"  目标页 '{fullTargetPageName}' 为插入前已存在的页面（增量模式），跳过其占位符处理，避免误改旧内容。");
+                                    continue;
+                                }
+                                pagesToProcess.Add(insertedPage);
+                                lastEmpPage = insertedPage;
                             }
                         }
                     }
@@ -693,8 +795,15 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                         {
                             if (_pageBoundingBoxes.TryGetValue(targetPage.Name, out var existingBounds))
                             {
-                                // Expand bounds if already exists (or just overwrite? Usually we overwrite so the next one attaches to THIS one)
-                                _pageBoundingBoxes[targetPage.Name] = (minX, minY, maxX, maxY);
+                                // Union with the previously recorded bounding box so that
+                                // "Sequential" placement anchors to the running extent of
+                                // all macros on this page (rightmost/leftmost/top/bottom),
+                                // not just the last inserted macro.
+                                _pageBoundingBoxes[targetPage.Name] = (
+                                    Math.Min(existingBounds.MinX, minX),
+                                    Math.Min(existingBounds.MinY, minY),
+                                    Math.Max(existingBounds.MaxX, maxX),
+                                    Math.Max(existingBounds.MaxY, maxY));
                             }
                             else
                             {
@@ -810,8 +919,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                                             recordsSet.Add(activeRecord);
                                         }
 
-                                        Eplan.EplApi.Base.MultiLangString mlsValue = new Eplan.EplApi.Base.MultiLangString();
-                                        mlsValue.SetAsString(evaluatedValue);
+                                        var mlsValue = CreatePlaceholderValue(evaluatedValue, db?.Settings);
 
                                         if (placeHolder.VariableNames != null)
                                         {
@@ -842,9 +950,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                                                     recordsSet.Add(activeRecord);
                                                 }
 
-                                                Eplan.EplApi.Base.MultiLangString mlsValue = new Eplan.EplApi.Base.MultiLangString();
-                                                mlsValue.SetAsString(evaluatedValue);
-                                                placeHolder.SetValue(activeRecord, varName, mlsValue);
+                                                placeHolder.SetValue(activeRecord, varName, CreatePlaceholderValue(evaluatedValue, db?.Settings));
                                                 hasCustomValues = true;
                                             }
                                         }
@@ -863,6 +969,11 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                             }
                         }
                     }
+                }
+                }
+                catch (Exception ex) when (!AbortOnFirstError)
+                {
+                    Log("Error", $"宏元素 '{element.MacroPath}' 生成失败，已跳过: {ex.Message}");
                 }
             }
 
@@ -901,9 +1012,11 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
             }
             if (string.Equals(targetType, "Integer", StringComparison.OrdinalIgnoreCase))
             {
-                try { return Convert.ToInt32(value); }
-                catch { }
+                if (value is int i) return i;
+                if (value is double d) return Convert.ToInt32(d);
                 if (int.TryParse(value.ToString(), out int parsedInt)) return parsedInt;
+                if (double.TryParse(value.ToString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double parsedDouble))
+                    return Convert.ToInt32(parsedDouble);
                 return 0;
             }
             if (string.Equals(targetType, "Double", StringComparison.OrdinalIgnoreCase))
@@ -915,6 +1028,48 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                 return 0.0;
             }
             return value.ToString();
+        }
+
+        // ==================== MULTI-LANGUAGE PLACEHOLDER VALUES (P-9) ====================
+
+        /// <summary>
+        /// Builds a placeholder value written per selected language instead of calling
+        /// <c>SetAsString</c> (which stamps the same text into every language).
+        /// </summary>
+        private static Eplan.EplApi.Base.MultiLangString CreatePlaceholderValue(string value, LibrarySettings settings)
+        {
+            var mls = new Eplan.EplApi.Base.MultiLangString();
+            bool anySet = false;
+
+            if (settings != null && settings.SelectedLanguages != null)
+            {
+                foreach (var langCode in settings.SelectedLanguages)
+                {
+                    var lang = ParseLanguageCode(langCode);
+                    if (lang.HasValue)
+                    {
+                        mls.AddString(lang.Value, value ?? "");
+                        anySet = true;
+                    }
+                }
+            }
+
+            if (!anySet)
+            {
+                mls.SetAsString(value ?? "");
+            }
+            return mls;
+        }
+
+        private static Eplan.EplApi.Base.ISOCode.Language? ParseLanguageCode(string code)
+        {
+            if (string.IsNullOrWhiteSpace(code)) return null;
+            string enumName = "L_" + code.Trim().Replace('-', '_');
+            if (Enum.TryParse(enumName, true, out Eplan.EplApi.Base.ISOCode.Language lang))
+            {
+                return lang;
+            }
+            return null;
         }
 
     }

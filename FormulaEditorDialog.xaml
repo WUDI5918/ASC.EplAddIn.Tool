@@ -3,107 +3,197 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.modernwpf.com/2019"
         xmlns:avalonedit="http://icsharpcode.net/sharpdevelop/avalonedit"
-        Title="表达式构建器 (Expression Builder)" Height="480" Width="750"
+        Title="表达式构建器 (Expression Builder)"
+        Height="540" Width="860"
+        MinHeight="420" MinWidth="700"
         WindowStartupLocation="CenterOwner"
-        Background="#1F1F1F" 
+        Background="{DynamicResource WorkspaceBg}"
         Foreground="White"
         ui:WindowHelper.UseModernWindowStyle="True"
         ui:ThemeManager.RequestedTheme="Dark"
-        FontFamily="Segoe UI">
-    
+        FontFamily="Segoe UI, Microsoft YaHei"
+        UseLayoutRounding="True">
+
     <Window.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="Theme.xaml" />
             </ResourceDictionary.MergedDictionaries>
+
+            <!-- ListBox item style for the variables panel -->
+            <Style x:Key="VariableListItem" TargetType="ListBoxItem">
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="Foreground" Value="#E2E8F0"/>
+                <Setter Property="Padding" Value="6,3"/>
+                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ListBoxItem">
+                            <Border x:Name="bd" Background="{TemplateBinding Background}"
+                                    CornerRadius="3" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="bd" Property="Background" Value="#2A2A2A"/>
+                                </Trigger>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter TargetName="bd" Property="Background" Value="#2B3B4C"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
         </ResourceDictionary>
     </Window.Resources>
 
-    <Grid Margin="15">
+    <Grid Margin="16">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/> <!-- Header -->
+            <RowDefinition Height="Auto"/> <!-- Toolbar -->
+            <RowDefinition Height="*"/>    <!-- Editor + Variables -->
+            <RowDefinition Height="Auto"/> <!-- Validation error -->
+            <RowDefinition Height="Auto"/> <!-- Status + actions -->
         </Grid.RowDefinitions>
-        
-        <TextBlock Text="JavaScript 公式编辑器" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,12" Foreground="White"/>
-        
-        <Grid Grid.Row="1">
+
+        <!-- ============ Header ============ -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,10">
+            <TextBlock Text="NCalc 公式编辑器" FontSize="16" FontWeight="SemiBold" Foreground="White"/>
+            <TextBlock Text="双击左侧变量 / 点击工具栏按钮插入 · Ctrl+Space 触发智能补全 · 输入时自动校验"
+                       FontSize="11" Foreground="{StaticResource TextMuted}" Margin="0,3,0,0"/>
+        </StackPanel>
+
+        <!-- ============ Operator / Function Toolbar ============ -->
+        <Border Grid.Row="1" Background="{StaticResource ListPaneBg}"
+                BorderBrush="{StaticResource BorderDark}" BorderThickness="1"
+                CornerRadius="4" Padding="6,4" Margin="0,0,0,8">
+            <WrapPanel x:Name="toolbarPanel" Orientation="Horizontal"/>
+        </Border>
+
+        <!-- ============ Editor + Variables ============ -->
+        <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="5*"/>
-                <ColumnDefinition Width="6"/>
+                <ColumnDefinition Width="8"/>
                 <ColumnDefinition Width="3*"/>
             </Grid.ColumnDefinitions>
-            
-            <!-- Code Editor Area with validation border -->
-            <Border x:Name="editorBorder" BorderBrush="{StaticResource BorderDark}" BorderThickness="1" CornerRadius="2" Background="{StaticResource ListPaneBg}" Padding="2">
-                <Grid>
-                    <avalonedit:TextEditor Name="txtEditor"
-                                           SyntaxHighlighting="JavaScript"
-                                           FontFamily="Consolas"
-                                           FontSize="14"
-                                           ShowLineNumbers="True"
-                                           Background="{StaticResource ListPaneBg}"
-                                           Foreground="White" />
-                    <!-- Validation icon overlay -->
-                    <TextBlock x:Name="validationIcon" Text="" FontSize="16" FontWeight="Bold"
-                               HorizontalAlignment="Right" VerticalAlignment="Top"
-                               Margin="0,4,18,0" IsHitTestVisible="False" Opacity="0.7"/>
-                </Grid>
+
+            <!-- Code editor with validation border -->
+            <Border x:Name="editorBorder"
+                    BorderBrush="{StaticResource BorderDark}" BorderThickness="1" CornerRadius="4"
+                    Background="{StaticResource ListPaneBg}" Padding="1">
+                <avalonedit:TextEditor x:Name="txtEditor"
+                                       FontFamily="Consolas"
+                                       FontSize="13"
+                                       ShowLineNumbers="True"
+                                       Background="Transparent"
+                                       Foreground="#E2E8F0"
+                                       Padding="4,3"
+                                       HorizontalScrollBarVisibility="Auto"
+                                       VerticalScrollBarVisibility="Auto"/>
             </Border>
-            
-            <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch" Background="Transparent"/>
-            
-            <!-- Resources Panel -->
-            <Border Grid.Column="2" BorderBrush="{StaticResource BorderDark}" BorderThickness="1" CornerRadius="2" Background="{StaticResource ListPaneBg}">
-                <TabControl Background="{StaticResource ListPaneBg}" BorderThickness="0" Margin="0">
-                    <TabItem Header="内置函数">
-                        <ListBox Name="lstFunctions" Background="Transparent" BorderThickness="0" MouseDoubleClick="LstFunctions_MouseDoubleClick" Margin="2,5">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <StackPanel Margin="0,4,0,4">
-                                        <TextBlock Text="{Binding Name}" FontWeight="Bold" Foreground="{StaticResource AccentBlue}"/>
-                                        <TextBlock Text="{Binding Description}" FontSize="12" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" Margin="0,2,0,0"/>
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-                    </TabItem>
-                    <TabItem Header="当前变量">
-                        <ListBox Name="lstVariables" Background="Transparent" BorderThickness="0" MouseDoubleClick="LstVariables_MouseDoubleClick" Margin="2,5">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding}" Padding="5,4" Cursor="Hand" ToolTip="双击插入光标处" FontSize="13" Foreground="White" />
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-                    </TabItem>
-                </TabControl>
+
+            <GridSplitter Grid.Column="1" Width="8" HorizontalAlignment="Center"
+                          VerticalAlignment="Stretch" Background="Transparent" Cursor="SizeWE"/>
+
+            <!-- Variables panel -->
+            <Border Grid.Column="2" BorderBrush="{StaticResource BorderDark}" BorderThickness="1"
+                    CornerRadius="4" Background="{StaticResource ListPaneBg}">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="变量 (Variables)"
+                               FontWeight="SemiBold" FontSize="13"
+                               Foreground="{StaticResource TextMuted}" Margin="10,10,0,6"/>
+
+                    <Grid DockPanel.Dock="Top" Margin="8,0,8,8">
+                        <TextBox x:Name="txtSearch" Height="26" Padding="6,0"
+                                 VerticalContentAlignment="Center"
+                                 Background="{StaticResource DetailsBg}"
+                                 Foreground="White"
+                                 BorderBrush="{StaticResource BorderDark}" BorderThickness="1"
+                                 TextChanged="TxtSearch_TextChanged"/>
+                        <TextBlock x:Name="txtSearchWatermark" Text="搜索变量..."
+                                   IsHitTestVisible="False" Margin="10,0"
+                                   VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextMuted}" FontSize="12.5"/>
+                    </Grid>
+
+                    <ListBox x:Name="lstVariables"
+                             Background="Transparent" BorderThickness="0"
+                             ItemContainerStyle="{StaticResource VariableListItem}"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             MouseDoubleClick="LstVariables_MouseDoubleClick">
+                        <ListBox.GroupStyle>
+                            <GroupStyle>
+                                <GroupStyle.HeaderTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Name}" FontSize="11" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TextMuted}" Margin="8,10,0,3"/>
+                                    </DataTemplate>
+                                </GroupStyle.HeaderTemplate>
+                            </GroupStyle>
+                        </ListBox.GroupStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid ToolTip="双击插入到光标处">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding Name}" FontSize="12.5" Foreground="#E2E8F0"
+                                               Cursor="Hand" VerticalAlignment="Center"/>
+                                    <Border Grid.Column="1" Background="#263440" CornerRadius="3"
+                                            Padding="5,1" Margin="6,0,0,0" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Category}" FontSize="10"
+                                                   Foreground="{StaticResource TextMuted}"/>
+                                    </Border>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
             </Border>
         </Grid>
 
-        <!-- Validation Error Detail -->
-        <Border x:Name="errorBorder" Grid.Row="2" Visibility="Collapsed" Margin="0,6,0,0"
-                BorderBrush="#E84040" BorderThickness="1" CornerRadius="2" Background="#2A1515" Padding="8,6">
-            <TextBlock x:Name="txtErrorDetail" TextWrapping="Wrap" Foreground="#FF8080" FontSize="12" FontFamily="Consolas"/>
+        <!-- ============ Validation Error Detail ============ -->
+        <Border x:Name="errorBorder" Grid.Row="3" Visibility="Collapsed" Margin="0,8,0,0"
+                BorderBrush="#E84040" BorderThickness="1" CornerRadius="4" Background="#2A1515" Padding="10,7">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="⚠" FontSize="13" Foreground="#E84040" Margin="0,0,8,0" VerticalAlignment="Top"/>
+                <TextBlock x:Name="txtErrorDetail" TextWrapping="Wrap" Foreground="#FF8080"
+                           FontSize="12" FontFamily="Consolas"/>
+            </StackPanel>
         </Border>
-        
-        <!-- Bottom Status & Actions -->
-        <Grid Grid.Row="3" Margin="0,10,0,0">
+
+        <!-- ============ Status + Actions ============ -->
+        <Grid Grid.Row="4" Margin="0,12,0,0">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/> <!-- Validate -->
+                <ColumnDefinition Width="*"/>    <!-- Status -->
+                <ColumnDefinition Width="Auto"/> <!-- Caret position -->
+                <ColumnDefinition Width="Auto"/> <!-- OK / Cancel -->
             </Grid.ColumnDefinitions>
-            
-            <Button Content="✓ 验证语法 (Validate)" Width="130" Height="30" Background="{StaticResource AccentBlue}" Foreground="White" BorderThickness="0" Cursor="Hand" Click="BtnValidate_Click" FontWeight="SemiBold"/>
-            
-            <TextBlock Name="txtStatus" Grid.Column="1" Margin="15,0" VerticalAlignment="Center" TextWrapping="Wrap" FontWeight="Medium" FontSize="13"/>
-            
-            <StackPanel Grid.Column="2" Orientation="Horizontal">
-                <Button Content="确认" Width="80" Height="30" Background="{StaticResource AccentBlue}" Foreground="White" BorderThickness="0" Cursor="Hand" Margin="0,0,10,0" Click="BtnOk_Click" IsDefault="True"/>
-                <Button Content="取消" Width="80" Height="30" Background="{StaticResource ButtonBg}" Foreground="White" BorderBrush="{StaticResource BorderDark}" BorderThickness="1" Cursor="Hand" Click="BtnCancel_Click" IsCancel="True"/>
+
+            <Button x:Name="btnValidate" Content="✓ 验证语法"
+                    Style="{StaticResource PrimaryButton}" Width="104"
+                    Click="BtnValidate_Click"/>
+
+            <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Orientation="Horizontal">
+                <TextBlock x:Name="validationIcon" Text="" FontSize="14" FontWeight="Bold"
+                           VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <TextBlock x:Name="txtStatus" VerticalAlignment="Center" TextWrapping="Wrap"
+                           FontWeight="Medium" FontSize="12.5"/>
+            </StackPanel>
+
+            <TextBlock x:Name="txtCaret" Grid.Column="2" VerticalAlignment="Center"
+                       FontFamily="Consolas" FontSize="11"
+                       Foreground="{StaticResource TextMuted}" Margin="0,0,14,0"/>
+
+            <StackPanel Grid.Column="3" Orientation="Horizontal">
+                <Button Content="确认" Style="{StaticResource PrimaryButton}" Width="88"
+                        Margin="0,0,8,0" Click="BtnOk_Click" IsDefault="True"/>
+                <Button Content="取消" Style="{StaticResource SecondaryButton}" Width="88"
+                        Click="BtnCancel_Click" IsCancel="True"/>
             </StackPanel>
         </Grid>
     </Grid>

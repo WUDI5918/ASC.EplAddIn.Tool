@@ -42,6 +42,22 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                     groupParameters[state.Group.Name] = GetGroupParameters(state);
                 }
 
+                // P-3: pre-flight validation before generation.
+                var preflight = PreflightValidator.ValidateConfigurator(_db, config, groupParameters);
+                if (preflight.HasErrors)
+                {
+                    TxtStatus.Text = "预检失败，已中止生成。";
+                    TxtStatus.Foreground = Brushes.Red;
+                    MessageBox.Show(preflight.ToString(), "生成前预检失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                if (preflight.HasWarnings)
+                {
+                    int warningCount = preflight.Issues.Count(i => i.Severity == PreflightSeverity.Warning);
+                    TxtStatus.Text = $"预检通过（有 {warningCount} 个警告，继续生成）";
+                    TxtStatus.Foreground = Brushes.Orange;
+                }
+
                 string templatePath = TxtTargetTemplate.Text.Trim();
                 string targetPath = TxtTargetProject.Text.Trim();
 
@@ -95,7 +111,9 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                 {
                     try
                     {
-                        string result = ConfiguratorService.GenerateTypical(typical);
+                        // Pass the in-memory _db so unsaved edits in the UI take effect (t10);
+                        // GenerateTypical falls back to the on-disk library when db is null.
+                        string result = ConfiguratorService.GenerateTypical(typical, _db);
 
                         this.Dispatcher.Invoke(() =>
                         {
@@ -1081,22 +1099,26 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                     {
                         row++;
 
+                        // Group header row: col1 = group name, col2 stays empty, variable
+                        // names start at col3. This matches the import parser, which only
+                        // begins group-header detection when column 2 is empty.
                         sheet.Cells[row, 1].Value = groupName;
                         sheet.Cells[row, 1].Style.Font.Bold = true;
 
                         var groupVars = values.Keys.Where(k => k.StartsWith(groupName + ".")).Select(k => k.Substring(groupName.Length + 1)).ToList();
                         for (int i = 0; i < groupVars.Count; i++)
                         {
-                            sheet.Cells[row, i + 2].Value = groupVars[i];
-                            sheet.Cells[row, i + 2].Style.Font.Bold = true;
+                            sheet.Cells[row, i + 3].Value = groupVars[i];
+                            sheet.Cells[row, i + 3].Style.Font.Bold = true;
                         }
                         row++;
 
+                        // Group data row: col1 = group name, col2 empty, values start at col3.
                         sheet.Cells[row, 1].Value = groupName;
                         for (int i = 0; i < groupVars.Count; i++)
                         {
                             string key = $"{groupName}.{groupVars[i]}";
-                            sheet.Cells[row, i + 2].Value = values[key];
+                            sheet.Cells[row, i + 3].Value = values[key];
                         }
                         row++;
                     }

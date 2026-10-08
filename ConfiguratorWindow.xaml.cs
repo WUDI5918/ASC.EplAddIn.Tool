@@ -18,7 +18,8 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
     {
         private const string DbFileName = "configurator_data.json";
         private string _dbFilePath;
-        private ConfiguratorData _db = new ConfiguratorData();
+        private readonly ConfiguratorViewModel _viewModel = new ConfiguratorViewModel();
+        private ConfiguratorData _db { get => _viewModel.Database; set => _viewModel.Database = value; }
         private int _selectedTab = 0; // 0: Macro-Typical, 1: Typical-Group, 2: Configurator
         internal object _selectedItem = null;
         private MacroElement _targetElementForMacroSelection = null;
@@ -29,7 +30,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
         private System.Windows.Threading.DispatcherTimer _toastTimer;
         private List<CheckableAddElement> _allModalAddElements = new List<CheckableAddElement>();
 
-        private bool _isDirty = false;
+        private bool _isDirty { get => _viewModel.IsDirty; set => _viewModel.IsDirty = value; }
         private bool _hasInjectedData = false;
         private System.Windows.Threading.DispatcherTimer _saveDebounceTimer;
         private System.Windows.Threading.DispatcherTimer _searchDebounceTimer;
@@ -61,6 +62,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                 InitializeDbPath(); // Still need the path for future saves
             }
             RefreshSidebar();
+            BindScriptsList();
             UpdateWorkspaceSelection();
             try
             {
@@ -229,6 +231,9 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                 {
                     _db = new ConfiguratorData();
                 }
+
+                // Repair null collections and duplicate structure mappings from any hand-edited JSON.
+                _db.Normalize();
 
                 // Add sample data if completely empty
                 if (_db.MacroTypicals.Count == 0 && _db.TypicalGroups.Count == 0 && _db.Configurators.Count == 0)

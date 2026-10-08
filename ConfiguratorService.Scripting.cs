@@ -16,11 +16,17 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
             if (scripts == null || scripts.Count == 0) return;
 
             var activeScripts = scripts
-                .Where(s => s.TriggerPoint == triggerPoint)
+                .Where(s => string.Equals(s.TriggerPoint, triggerPoint, StringComparison.OrdinalIgnoreCase))
                 .Where(s =>
                 {
                     try { return EvaluateActiveFormula(s.IsActiveFormula, parameters); }
-                    catch { return true; }
+                    catch (Exception ex)
+                    {
+                        // Activation-condition evaluation failed: default to running the script
+                        // (unchanged fallback), but surface the error in the debug log.
+                        LogDebug($"脚本 '{s.Name}' 激活条件评估异常，默认执行该脚本: {ex.Message}");
+                        return true;
+                    }
                 })
                 .OrderBy(s => s.Order)
                 .ToList();
@@ -35,8 +41,18 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                         engine.SetValue(kvp.Key, kvp.Value);
                     }
                     engine.SetValue("Log", new Action<string>(msg => logAction?.Invoke($"[Script:{script.Name}] {msg}")));
-                    engine.SetValue("Lookup", new Func<string, string, string, string, string>((table, retCol, searchCol, searchVal) => QueryGenericCatalog(table, retCol, searchCol, searchVal)));
-                    engine.SetValue("Concat", new Func<object, object, string>((a, b) => (a?.ToString() ?? "") + (b?.ToString() ?? "")));
+                    engine.SetValue("Lookup", new Func<string, string, string, string, string>((table, retCol, searchCol, searchVal) => RuleEngine.QueryCatalog(table, retCol, searchCol, searchVal, _ruleEngineContext)));
+                    // Concat supports variable arguments (2+), matching the main expression engine.
+                    engine.Execute(@"
+                        function Concat() {
+                            var result = '';
+                            for (var i = 0; i < arguments.length; i++) {
+                                var a = arguments[i];
+                                result += (a === null || a === undefined) ? '' : String(a);
+                            }
+                            return result;
+                        }
+                    ");
 
                     engine.Execute(script.ScriptContent);
                     logAction?.Invoke($"[Script:{script.Name}] executed successfully");

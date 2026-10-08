@@ -1,4 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <!-- EPLAN SDK install directory. Override on machines/CI where EPLAN lives elsewhere, e.g.:
+       dotnet build -p:EplanInstallDir=D:\EPLAN\Bin
+       The default resolves to the same location as the old hard-coded relative HintPath
+       (5 levels up from this file -> C:\Program Files\EPLAN\Platform\2026.0.3\Bin). -->
+  <PropertyGroup>
+    <EplanInstallDir Condition="'$(EplanInstallDir)'==''">$(MSBuildThisFileDirectory)..\..\..\..\..\Program Files\EPLAN\Platform\2026.0.3\Bin</EplanInstallDir>
+  </PropertyGroup>
+
   <PropertyGroup>
     <TargetFramework>net481</TargetFramework>
     <UseWpf>true</UseWpf>
@@ -42,63 +50,63 @@
 
   <ItemGroup>
     <Reference Include="Eplan.EC.Contracts">
-      <HintPath>..\..\..\..\..\Program Files\EPLAN\Platform\2026.0.3\Bin\Eplan.EC.Contracts.dll</HintPath>
+      <HintPath>$(EplanInstallDir)\Eplan.EC.Contracts.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Eplan.EplApi.AFu">
-      <HintPath>..\..\..\..\..\Program Files\EPLAN\Platform\2026.0.3\Bin\Eplan.EplApi.AFu.dll</HintPath>
+      <HintPath>$(EplanInstallDir)\Eplan.EplApi.AFu.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Eplan.EplApi.Baseu">
-      <HintPath>..\..\..\..\..\Program Files\EPLAN\Platform\2026.0.3\Bin\Eplan.EplApi.Baseu.dll</HintPath>
+      <HintPath>$(EplanInstallDir)\Eplan.EplApi.Baseu.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Eplan.EplApi.DataModelu">
-      <HintPath>..\..\..\..\..\Program Files\EPLAN\Platform\2026.0.3\Bin\Eplan.EplApi.DataModelu.dll</HintPath>
+      <HintPath>$(EplanInstallDir)\Eplan.EplApi.DataModelu.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Eplan.EplApi.EServicesu">
-      <HintPath>..\..\..\..\..\Program Files\EPLAN\Platform\2026.0.3\Bin\Eplan.EplApi.EServicesu.dll</HintPath>
+      <HintPath>$(EplanInstallDir)\Eplan.EplApi.EServicesu.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Eplan.EplApi.Guiu">
-      <HintPath>..\..\..\..\..\Program Files\EPLAN\Platform\2026.0.3\Bin\Eplan.EplApi.Guiu.dll</HintPath>
+      <HintPath>$(EplanInstallDir)\Eplan.EplApi.Guiu.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Eplan.EplApi.HEServicesu">
-      <HintPath>..\..\..\..\..\Program Files\EPLAN\Platform\2026.0.3\Bin\Eplan.EplApi.HEServicesu.dll</HintPath>
+      <HintPath>$(EplanInstallDir)\Eplan.EplApi.HEServicesu.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Eplan.EplApi.MasterDatau">
-      <HintPath>..\..\..\..\..\Program Files\EPLAN\Platform\2026.0.3\Bin\Eplan.EplApi.MasterDatau.dll</HintPath>
+      <HintPath>$(EplanInstallDir)\Eplan.EplApi.MasterDatau.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Eplan.EplApi.RecorderToolsu">
-      <HintPath>..\..\..\..\..\Program Files\EPLAN\Platform\2026.0.3\Bin\Eplan.EplApi.RecorderToolsu.dll</HintPath>
+      <HintPath>$(EplanInstallDir)\Eplan.EplApi.RecorderToolsu.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Eplan.EplApi.RemoteClientu">
-      <HintPath>..\..\..\..\..\Program Files\EPLAN\Platform\2026.0.3\Bin\Eplan.EplApi.RemoteClientu.dll</HintPath>
+      <HintPath>$(EplanInstallDir)\Eplan.EplApi.RemoteClientu.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Eplan.EplApi.Remotingu">
-      <HintPath>..\..\..\..\..\Program Files\EPLAN\Platform\2026.0.3\Bin\Eplan.EplApi.Remotingu.dll</HintPath>
+      <HintPath>$(EplanInstallDir)\Eplan.EplApi.Remotingu.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Eplan.EplApi.Starteru">
-      <HintPath>..\..\..\..\..\Program Files\EPLAN\Platform\2026.0.3\Bin\Eplan.EplApi.Starteru.dll</HintPath>
+      <HintPath>$(EplanInstallDir)\Eplan.EplApi.Starteru.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Eplan.EplApi.Systemu">
-      <HintPath>..\..\..\..\..\Program Files\EPLAN\Platform\2026.0.3\Bin\Eplan.EplApi.Systemu.dll</HintPath>
+      <HintPath>$(EplanInstallDir)\Eplan.EplApi.Systemu.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Eplan.EplApi.WebServicesu">
-      <HintPath>..\..\..\..\..\Program Files\EPLAN\Platform\2026.0.3\Bin\Eplan.EplApi.WebServicesu.dll</HintPath>
+      <HintPath>$(EplanInstallDir)\Eplan.EplApi.WebServicesu.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Eplan.EplApi.WebServiceu">
-      <HintPath>..\..\..\..\..\Program Files\EPLAN\Platform\2026.0.3\Bin\Eplan.EplApi.WebServiceu.dll</HintPath>
+      <HintPath>$(EplanInstallDir)\Eplan.EplApi.WebServiceu.dll</HintPath>
       <Private>False</Private>
     </Reference>
   </ItemGroup>
@@ -110,6 +118,7 @@
   <ItemGroup>
     <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
     <PackageReference Include="Jint" Version="4.10.1" />
+    <PackageReference Include="NCalc-Edge" Version="1.5.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="EPPlus" Version="4.5.3.3" />
     <PackageReference Include="ModernWpfUI" Version="0.9.6" />

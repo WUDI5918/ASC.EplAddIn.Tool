@@ -15,6 +15,83 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
 {
     public partial class ConfiguratorWindow : Window
     {
+        // ==================== STRUCTURE MAPPINGS (KEY-BASED READ/WRITE) ====================
+        // The details panel structure fields are read/written by structure key (e.g. "&" for
+        // Document type) instead of by fixed StructureMappings index, so reordering or de-duping
+        // the mapping list can never shift a value into the wrong slot.
+        private bool _isLoadingStructureUi = false;
+
+        private static string GetStructureMappingValue(MacroElement element, string key)
+        {
+            var m = element?.StructureMappings?.FirstOrDefault(x => string.Equals(x.Key, key, StringComparison.OrdinalIgnoreCase));
+            return m?.Value ?? "";
+        }
+
+        private static void SetStructureMappingValue(MacroElement element, string key, string value)
+        {
+            if (element == null || string.IsNullOrEmpty(key)) return;
+            if (element.StructureMappings == null) element.StructureMappings = new List<MappingEntry>();
+
+            var m = element.StructureMappings.FirstOrDefault(x => string.Equals(x.Key, key, StringComparison.OrdinalIgnoreCase));
+            if (m != null)
+            {
+                m.Value = value ?? "";
+                return;
+            }
+
+            // Key missing (e.g. legacy JSON without a "&" entry): add it. Keep "&" before
+            // "UserDefined" to preserve the canonical EPLAN page-name order (== = + & # PageName).
+            int insertIndex = element.StructureMappings.Count;
+            if (string.Equals(key, "&", StringComparison.OrdinalIgnoreCase))
+            {
+                int userDefinedIndex = element.StructureMappings.FindIndex(x => string.Equals(x.Key, "UserDefined", StringComparison.OrdinalIgnoreCase));
+                if (userDefinedIndex >= 0) insertIndex = userDefinedIndex;
+            }
+            element.StructureMappings.Insert(insertIndex, new MappingEntry(key, value ?? ""));
+        }
+
+        private void LoadStructureMappingsToUi(MacroElement element)
+        {
+            if (element == null || TxtStructureFunctionDesignation == null) return;
+            _isLoadingStructureUi = true;
+            try
+            {
+                TxtStructureFunctionDesignation.Text = GetStructureMappingValue(element, "=");
+                TxtStructureLocationDesignation.Text = GetStructureMappingValue(element, "+");
+                TxtStructureDocumentType.Text = GetStructureMappingValue(element, "&");
+                TxtStructurePageName.Text = GetStructureMappingValue(element, "PageName");
+            }
+            finally
+            {
+                _isLoadingStructureUi = false;
+            }
+        }
+
+        private string GetStructureKeyForTextBox(TextBox txt)
+        {
+            if (txt == TxtStructureFunctionDesignation) return "=";
+            if (txt == TxtStructureLocationDesignation) return "+";
+            if (txt == TxtStructureDocumentType) return "&";
+            if (txt == TxtStructurePageName) return "PageName";
+            return null;
+        }
+
+        private void StructureMappingTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (_isLoadingStructureUi) return; // Programmatic load; not a user edit.
+            if (!(sender is TextBox txt)) return;
+            if (!(_selectedMacroElement is MacroElement element)) return;
+
+            string key = GetStructureKeyForTextBox(txt);
+            if (string.IsNullOrEmpty(key)) return;
+
+            string current = GetStructureMappingValue(element, key);
+            if (string.Equals(current, txt.Text)) return; // No actual change.
+
+            SetStructureMappingValue(element, key, txt.Text);
+            MarkDirty();
+        }
+
         // ==================== EBUILD STYLE INTERACTIONS & TRIGGERS ====================
         private void ItrElements_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -40,6 +117,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                 GridMacroDetails.Visibility = Visibility.Visible;
                 GridMacroDetails.DataContext = null;
                 GridMacroDetails.DataContext = _selectedMacroElement;
+                LoadStructureMappingsToUi(_selectedMacroElement);
 
                 // Bind Active Formula Status radio buttons
                 if (string.IsNullOrEmpty(_selectedMacroElement.IsActiveFormula))
@@ -518,11 +596,73 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
             }
         }
 
-        // ==================== NEW OVERLAY MODAL HANDLERS & HELPERS ====================
+        // ==================== SCRIPT TYPICALS ====================
+        private void BindScriptsList()
+        {
+            if (_db.Scripts == null) _db.Scripts = new List<ScriptTypical>();
+            bool has = _db.Scripts.Count > 0;
+
+            if (LstScripts != null)
+            {
+                LstScripts.ItemsSource = null;
+                if (has) LstScripts.ItemsSource = _db.Scripts;
+                LstScripts.Visibility = has ? Visibility.Visible : Visibility.Collapsed;
+            }
+            if (GridScriptsEmptyState != null)
+            {
+                GridScriptsEmptyState.Visibility = has ? Visibility.Collapsed : Visibility.Visible;
+            }
+            if (ExpScriptTypicals != null)
+            {
+                ExpScriptTypicals.Header = $"Script Typicals ({_db.Scripts.Count})";
+            }
+        }
+
         private void BtnAddScriptTypical_Click(object sender, RoutedEventArgs e)
         {
             e.Handled = true;
-            ShowToast("Script Typicals are not supported yet.");
+            var dialog = new ScriptTypicalEditorDialog(null) { Owner = this };
+            if (dialog.ShowDialog() == true && dialog.Result != null)
+            {
+                if (_db.Scripts == null) _db.Scripts = new List<ScriptTypical>();
+                _db.Scripts.Add(dialog.Result);
+                BindScriptsList();
+                MarkDirty();
+                ShowToast($"已添加脚本规则 '{dialog.Result.Name}'");
+            }
+        }
+
+        private void BtnEditScript_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button btn && btn.DataContext is ScriptTypical script)
+            {
+                var dialog = new ScriptTypicalEditorDialog(script) { Owner = this };
+                if (dialog.ShowDialog() == true && dialog.Result != null)
+                {
+                    script.Name = dialog.Result.Name;
+                    script.TriggerPoint = dialog.Result.TriggerPoint;
+                    script.Order = dialog.Result.Order;
+                    script.IsActiveFormula = dialog.Result.IsActiveFormula;
+                    script.ScriptContent = dialog.Result.ScriptContent;
+                    BindScriptsList();
+                    MarkDirty();
+                    ShowToast($"已更新脚本规则 '{script.Name}'");
+                }
+            }
+        }
+
+        private void BtnDeleteScript_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button btn && btn.DataContext is ScriptTypical script)
+            {
+                ShowDeleteConfirmation("确认删除", $"确定删除脚本规则 '{script.Name}' 吗？", () =>
+                {
+                    _db.Scripts?.Remove(script);
+                    BindScriptsList();
+                    MarkDirty();
+                    ShowToast($"已删除脚本规则 '{script.Name}'");
+                });
+            }
         }
 
 

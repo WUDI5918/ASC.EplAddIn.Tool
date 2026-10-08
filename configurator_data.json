@@ -109,6 +109,16 @@
           "DefaultValue": ""
         },
         {
+          "Name": "Use_Cabinet",
+          "Type": "Boolean",
+          "DisplayName": "是否生成配电柜图纸",
+          "IsMandatory": false,
+          "VisibilityFormula": "",
+          "PredefinedValues": [],
+          "Category": "",
+          "DefaultValue": ""
+        },
+        {
           "Name": "Cabinet_Current",
           "Type": "String",
           "DisplayName": "配电柜额定电流",
@@ -274,7 +284,6 @@
   ],
   "Settings": {
     "Unit": "Metric",
-    "UseSubSegmentLogic": false,
     "SelectedLanguages": [
       "zh-CN",
       "en-US",

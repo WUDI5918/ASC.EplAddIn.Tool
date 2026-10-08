@@ -4,9 +4,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Media;
 using Eplan.EplApi.Base;
 using Eplan.EplApi.DataModel;
 using Page = Eplan.EplApi.DataModel.Page;
@@ -25,7 +22,31 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
     public partial class ConfiguratorService
     {
         public static List<LogEntry> GenerationLogs { get; } = new List<LogEntry>();
+        private static readonly object _generationLogsLock = new object();
         public static event Action<LogEntry> OnLogAdded;
+
+        /// <summary>
+        /// Thread-safe clear of the generation log collection.
+        /// </summary>
+        public static void ClearGenerationLogs()
+        {
+            lock (_generationLogsLock)
+            {
+                GenerationLogs.Clear();
+            }
+        }
+
+        /// <summary>
+        /// Returns a consistent snapshot of the generation logs for enumeration,
+        /// avoiding "collection modified during enumeration" exceptions.
+        /// </summary>
+        public static List<LogEntry> SnapshotGenerationLogs()
+        {
+            lock (_generationLogsLock)
+            {
+                return GenerationLogs.ToList();
+            }
+        }
 
         private static string[] _cachedCatalogLines = null;
         private static DateTime _cachedCatalogTimestamp = DateTime.MinValue;
@@ -39,16 +60,23 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                 Level = level,
                 Message = message
             };
-            GenerationLogs.Add(entry);
+            lock (_generationLogsLock)
+            {
+                GenerationLogs.Add(entry);
+            }
             LogDebug($"[{level}] {message}");
             OnLogAdded?.Invoke(entry);
         }
         /// <summary>
         /// Prompts user for variable values, then executes macro placement and placeholder mapping for a Macro-Typical under a safe transaction.
         /// </summary>
-        public static string GenerateTypical(MacroTypical typical)
+        /// <param name="typical">The macro typical to generate.</param>
+        /// <param name="db">The in-memory rule library to generate against (the UI passes its
+        /// unsaved <c>_db</c> so edits take effect immediately). When <c>null</c>, the library is
+        /// loaded from disk to keep other callers working.</param>
+        public static string GenerateTypical(MacroTypical typical, ConfiguratorData db = null)
         {
-            GenerationLogs.Clear();
+            ClearGenerationLogs();
             Log("Info", $"开始为宏规则 '{typical.Name}' 生成原理图...");
 
             // 1. Get EPLAN Context
@@ -153,18 +181,32 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                 }
             }
 
-            // Load database to pass to GenerateTypicalInternal if needed
-            ConfiguratorData db = new ConfiguratorData();
-            try
+            // Use the caller-provided in-memory library (the UI passes its unsaved _db so edits
+            // take effect immediately); otherwise fall back to the on-disk library so other
+            // callers keep working. A failed disk read is logged, never silently swallowed into
+            // an empty library.
+            if (db == null)
             {
-                string dbPath = GetDatabasePath();
-                if (File.Exists(dbPath))
+                db = new ConfiguratorData();
+                try
                 {
-                    string json = File.ReadAllText(dbPath);
-                    db = Newtonsoft.Json.JsonConvert.DeserializeObject<ConfiguratorData>(json) ?? new ConfiguratorData();
+                    string dbPath = GetDatabasePath();
+                    if (File.Exists(dbPath))
+                    {
+                        string json = File.ReadAllText(dbPath);
+                        db = Newtonsoft.Json.JsonConvert.DeserializeObject<ConfiguratorData>(json) ?? new ConfiguratorData();
+                    }
+                    else
+                    {
+                        Log("Warning", $"规则库文件不存在: '{dbPath}'，将以空库继续生成。");
+                    }
+                }
+                catch (Exception dbEx)
+                {
+                    Log("Warning", $"读取规则库失败: {dbEx.Message}，将以空库继续生成。");
+                    LogDebug($"读取规则库失败: {dbEx.Message}\n{dbEx.StackTrace}");
                 }
             }
-            catch { }
 
             int placedCount = 0;
             int placeholderUpdates = 0;
@@ -176,6 +218,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
             var initialPages = new HashSet<string>(activeProject.Pages.Select(p => p.Name));
 
             using (Transaction transaction = new TransactionManager().CreateTransaction())
+            using (LockingStep lockingStep = new LockingStep())
             {
                 try
                 {
@@ -198,86 +241,14 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                     Log("Error", errMsg);
                     throw;
                 }
+                finally
+                {
+                    // t9: restore per-run generation options to their safe defaults so a value
+                    // set by the silent action (JSON "Incremental"/"AbortOnFirstError") never
+                    // leaks into later UI-triggered generations.
+                    ResetGenerationOptions();
+                }
             }
-        }
-
-        // ==================== VARIABLE USER INPUT DIALOG ====================
-
-        private static Dictionary<string, string> PromptForVariables(List<ConfigurationVariable> variables)
-        {
-            Dictionary<string, string> values = new Dictionary<string, string>();
-            foreach (var variable in variables)
-            {
-                string val = ShowInputBox(
-                    $"请输入变量 [{variable.Name}] 的值：\n(变量显示名: {variable.DisplayName})",
-                    variable.Name,
-                    ""
-                );
-                values[variable.Name] = val;
-            }
-            return values;
-        }
-
-        private static string ShowInputBox(string text, string title, string defaultValue)
-        {
-            string result = defaultValue;
-
-            Window prompt = new Window()
-            {
-                Width = 420,
-                Height = 160,
-                Title = "配置变量 input - " + title,
-                WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                ResizeMode = ResizeMode.NoResize,
-                Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(243, 244, 246)),
-                FontFamily = new FontFamily("Microsoft YaHei"),
-                Topmost = true
-            };
-
-            StackPanel sp = new StackPanel { Margin = new Thickness(15) };
-
-            TextBlock lbl = new TextBlock
-            {
-                Text = text,
-                FontWeight = FontWeights.Bold,
-                Margin = new Thickness(0, 0, 0, 8),
-                TextWrapping = TextWrapping.Wrap
-            };
-
-            TextBox txt = new TextBox
-            {
-                Text = defaultValue,
-                Height = 28,
-                VerticalContentAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 0, 10)
-            };
-
-            Button btn = new Button
-            {
-                Content = "确定 (OK)",
-                Width = 90,
-                Height = 28,
-                HorizontalAlignment = HorizontalAlignment.Right,
-                IsDefault = true,
-                Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(205, 55, 55)),
-                Foreground = Brushes.White,
-                FontWeight = FontWeights.Bold,
-                BorderThickness = new Thickness(0)
-            };
-
-            btn.Click += (s, e) =>
-            {
-                result = txt.Text;
-                prompt.DialogResult = true;
-                prompt.Close();
-            };
-
-            sp.Children.Add(lbl);
-            sp.Children.Add(txt);
-            sp.Children.Add(btn);
-            prompt.Content = sp;
-            prompt.ShowDialog();
-            return result;
         }
 
         private static string GetSafeProperty(Eplan.EplApi.DataModel.StorableObjectPropertyList props, Eplan.EplApi.DataModel.AnyPropertyId prop)
@@ -400,72 +371,21 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
         public static string ValidateExpression(string expressionStr, List<string> availableVariables)
         {
             if (string.IsNullOrWhiteSpace(expressionStr)) return null;
-            try
-            {
-                string clean = expressionStr.Trim();
-                if (clean.StartsWith("="))
-                {
-                    clean = clean.Substring(1).Trim();
-                }
-                else
-                {
-                    return null; // Constant
-                }
+            if (!expressionStr.Trim().StartsWith("=")) return null; // Constant
 
-                // Preprocess NCalc-style syntax (and/or/not) to JS equivalents
-                clean = PreprocessNCalcSyntax(clean);
+            // Delegate to the same NCalc engine used at evaluation time so that validation
+            // and generation never diverge.
+            return RuleEngine.Validate(expressionStr, availableVariables, _ruleEngineContext);
+        }
 
-                // Use Jint engine to validate — same engine used for evaluation
-                var validationEngine = new Jint.Engine();
-
-                // Register custom engineering functions (same as EvaluateExpression)
-                validationEngine.SetValue("Lookup_Breaker", new Func<double, string, string>((power, startType) => "Mock"));
-                validationEngine.SetValue("Lookup", new Func<string, string, string, string, string>((a, b, c, d) => "Mock"));
-                // Concat: defined as JS function to support variable arguments (2+), same as EvaluateExpression
-                validationEngine.Execute(@"
-                    function Concat() {
-                        var result = '';
-                        for (var i = 0; i < arguments.length; i++) {
-                            var a = arguments[i];
-                            result += (a === null || a === undefined) ? '' : String(a);
-                        }
-                        return result;
-                    }
-                ");
-                validationEngine.SetValue("IsAvailable", new Func<string, bool>((varName) => true));
-                validationEngine.SetValue("IsNullEmpty", new Func<string, bool>((val) => false));
-                validationEngine.SetValue("Contains", new Func<string, string, bool>((str, sub) => false));
-                validationEngine.SetValue("StartsWith", new Func<string, string, bool>((str, sub) => false));
-                validationEngine.SetValue("EndsWith", new Func<string, string, bool>((str, sub) => false));
-                validationEngine.SetValue("Upper", new Func<string, string>((str) => (str ?? "").ToUpper()));
-                validationEngine.SetValue("Lower", new Func<string, string>((str) => (str ?? "").ToLower()));
-                validationEngine.SetValue("If", new Func<bool, object, object, object>((cond, t, f) => cond ? t : f));
-
-                // Register NCalc-compatible math functions (same as EvaluateExpression)
-                RegisterMathFunctions(validationEngine);
-
-                // Inject mock system variables
-                validationEngine.SetValue("ProjectName", "Mock_Project");
-                validationEngine.SetValue("Date", DateTime.Now.ToString("yyyy-MM-dd"));
-                validationEngine.SetValue("User", "MockUser");
-
-                // Bind available variables with mock values
-                if (availableVariables != null)
-                {
-                    foreach (var varName in availableVariables)
-                    {
-                        validationEngine.SetValue(varName, 0);
-                    }
-                }
-
-                // Try to evaluate — if it throws, the expression is invalid
-                validationEngine.Evaluate(clean);
-            }
-            catch (Exception ex)
-            {
-                return ex.Message;
-            }
-            return null;
+        /// <summary>
+        /// Validates any formula (with or without a leading '='). Returns null when valid, or the
+        /// error message when invalid. Used by pre-flight validation.
+        /// </summary>
+        public static string ValidateFormula(string formula, IEnumerable<string> variableNames)
+        {
+            if (string.IsNullOrWhiteSpace(formula)) return null;
+            return RuleEngine.Validate(formula, variableNames, _ruleEngineContext);
         }
 
         public static string ResolveMacroPath(string macroPath)
@@ -606,7 +526,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
 
                 var lines = new List<string>();
                 lines.Add($"=== Generation Log — {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===");
-                foreach (var entry in GenerationLogs)
+                foreach (var entry in SnapshotGenerationLogs())
                 {
                     lines.Add($"[{entry.Timestamp:yyyy-MM-dd HH:mm:ss}] [{entry.Level}] {entry.Message}");
                 }
@@ -632,6 +552,18 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
             if (!string.IsNullOrWhiteSpace(userDefined)) fullPageName += "#" + userDefined.Trim();
             fullPageName += "/" + (pageName ?? "").Trim();
             return fullPageName;
+        }
+
+        public static string FormatPageName(PageStructure structure)
+        {
+            if (structure == null) return "";
+            return FormatPageName(
+                structure.FunctionalAssignment,
+                structure.FunctionDesignation,
+                structure.LocationDesignation,
+                structure.DocumentType,
+                structure.UserDefined,
+                structure.PageName);
         }
 
         public static MappingEntry FindPlaceholderMapping(string phName, string varName, List<MappingEntry> mappings)

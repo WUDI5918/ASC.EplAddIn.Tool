@@ -261,8 +261,27 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool.Tests
             var resultPow = ConfiguratorService.EvaluateExpression("Pow(2, 3)", parameters);
             Assert.Equal(8.0, Convert.ToDouble(resultPow));
 
-            var resultRound = ConfiguratorService.EvaluateExpression("Round(3.7)", parameters);
+            var resultRound = ConfiguratorService.EvaluateExpression("Round(3.7, 0)", parameters);
             Assert.Equal(4.0, Convert.ToDouble(resultRound));
+
+            var resultRoundDigits = ConfiguratorService.EvaluateExpression("Round(1.234, 2)", parameters);
+            Assert.Equal(1.23, Convert.ToDouble(resultRoundDigits));
+        }
+
+        [Fact]
+        public void EvaluateExpression_WithTernaryAndCeilingFloor_ShouldEvaluate()
+        {
+            var parameters = new Dictionary<string, object> { { "Power", 15.0 } };
+
+            // NCalc-Edge supports the C-style ternary operator natively.
+            var ternary = ConfiguratorService.EvaluateExpression("Power > 11.0 ? '32A' : '16A'", parameters);
+            Assert.Equal("32A", ternary);
+
+            var ceiling = ConfiguratorService.EvaluateExpression("Ceiling(1.2)", parameters);
+            Assert.Equal(2.0, Convert.ToDouble(ceiling));
+
+            var floor = ConfiguratorService.EvaluateExpression("Floor(1.8)", parameters);
+            Assert.Equal(1.0, Convert.ToDouble(floor));
         }
 
         [Fact]
@@ -299,7 +318,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool.Tests
             Assert.Equal("Start and Stop", ConfiguratorService.EvaluateExpression("Concat('Start and Stop')", parameters)?.ToString());
             Assert.Equal("black or white", ConfiguratorService.EvaluateExpression("Concat('black or white')", parameters)?.ToString());
             Assert.Equal("do not", ConfiguratorService.EvaluateExpression("Concat('do not')", parameters)?.ToString());
-            Assert.Equal("A and B", ConfiguratorService.EvaluateExpression("Concat(\"A and B\")", parameters)?.ToString());
+            Assert.Equal("A and B", ConfiguratorService.EvaluateExpression("Concat('A and B')", parameters)?.ToString());
         }
 
         [Fact]
@@ -315,6 +334,54 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool.Tests
             Assert.True((bool)ConfiguratorService.EvaluateExpression("A or B", parameters));
             Assert.True((bool)ConfiguratorService.EvaluateExpression("not A == false", parameters));
             Assert.Equal("android", ConfiguratorService.EvaluateExpression("Concat('android')", parameters)?.ToString());
+        }
+
+        // ==========================================
+        // TIER 4: Validation context consistency (t3-H2 fix)
+        // ==========================================
+
+        [Fact]
+        public void Validate_WithCrossVariableReference_ShouldPass()
+        {
+            // A formula referencing a variable outside the supplied scope must still validate:
+            // RuleEngine.Validate is a syntax check and auto-mocks every identifier token so that
+            // "Parameter was not defined" (NCalc-Edge throws even with AllowNullParameter) can no
+            // longer turn a valid cross-variable formula into a false validation error.
+            var err = ConfiguratorService.ValidateFormula("=Use_Cabinet==true", new[] { "Cabinet_Current" });
+            Assert.Null(err);
+        }
+
+        [Fact]
+        public void Validate_WithUndefinedVariableOnly_ShouldPass()
+        {
+            // Even with no variable names supplied at all, a plain identifier reference must
+            // validate (syntax-only). Reference integrity is pre-flight's responsibility.
+            var err = ConfiguratorService.ValidateFormula("SomeUndefinedVar == 5", new List<string>());
+            Assert.Null(err);
+        }
+
+        [Fact]
+        public void Validate_WithSyntaxError_ShouldStillFail()
+        {
+            // Auto-mocking must not mask real syntax/parse errors.
+            var err = ConfiguratorService.ValidateFormula("invalid (((", new[] { "Power" });
+            Assert.NotNull(err);
+        }
+
+        [Fact]
+        public void Validate_WithWrongFunctionArity_ShouldStillFail()
+        {
+            // Auto-mocking must not mask function usage errors (Round requires exactly 2 args).
+            var err = ConfiguratorService.ValidateFormula("Round(Power)", new[] { "Power" });
+            Assert.NotNull(err);
+        }
+
+        [Fact]
+        public void Validate_WithUnknownFunction_ShouldStillFail()
+        {
+            // Auto-mocking must not mask unknown function calls.
+            var err = ConfiguratorService.ValidateFormula("NonExistentFunction(1)", new List<string>());
+            Assert.NotNull(err);
         }
     }
 }

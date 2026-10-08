@@ -10,6 +10,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
     {
         private List<ConfigurationVariable> _variables;
         private Dictionary<string, FrameworkElement> _controlMap = new Dictionary<string, FrameworkElement>();
+        private Dictionary<string, FrameworkElement> _rowMap = new Dictionary<string, FrameworkElement>();
 
         public Dictionary<string, string> VariableValues { get; private set; } = new Dictionary<string, string>();
 
@@ -94,6 +95,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
 
                         int defIdx = variable.PredefinedValues.IndexOf(defaultVal);
                         cbo.SelectedIndex = defIdx != -1 ? defIdx : 0;
+                        cbo.SelectionChanged += (s, ev) => EvaluateVisibility();
                         inputCtrl = cbo;
                     }
                     else if (variable.Type.Equals("Boolean", StringComparison.OrdinalIgnoreCase))
@@ -101,12 +103,15 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                         var chk = new CheckBox { VerticalAlignment = VerticalAlignment.Center };
                         bool.TryParse(defaultVal, out bool defBool);
                         chk.IsChecked = defBool;
+                        chk.Checked += (s, ev) => EvaluateVisibility();
+                        chk.Unchecked += (s, ev) => EvaluateVisibility();
                         inputCtrl = chk;
                     }
                     else
                     {
                         var txt = new TextBox { Height = 28, VerticalContentAlignment = VerticalAlignment.Center };
                         txt.Text = defaultVal;
+                        txt.TextChanged += (s, ev) => EvaluateVisibility();
                         inputCtrl = txt;
                     }
 
@@ -114,11 +119,90 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                     rowGrid.Children.Add(inputCtrl);
 
                     _controlMap[variable.Name] = inputCtrl;
+                    _rowMap[variable.Name] = rowGrid;
                     catPanel.Children.Add(rowGrid);
                 }
 
                 catBorder.Child = catPanel;
                 VariablesFormPanel.Children.Add(catBorder);
+            }
+
+            // Apply visibility formulas after the whole form is built
+            EvaluateVisibility();
+        }
+
+        /// <summary>
+        /// Reads the current control values as a typed dictionary, mirroring how the
+        /// generation engine types parameters so visibility formulas evaluate correctly.
+        /// </summary>
+        private Dictionary<string, object> BuildCurrentValues()
+        {
+            var values = new Dictionary<string, object>();
+            foreach (var variable in _variables)
+            {
+                if (!_controlMap.TryGetValue(variable.Name, out var ctrl))
+                {
+                    values[variable.Name] = null;
+                    continue;
+                }
+
+                if (ctrl is ComboBox cbo)
+                {
+                    string s = cbo.SelectedItem?.ToString() ?? "";
+                    if (variable.Type.Equals("Integer", StringComparison.OrdinalIgnoreCase) && int.TryParse(s, out int i))
+                        values[variable.Name] = i;
+                    else if (variable.Type.Equals("Double", StringComparison.OrdinalIgnoreCase) && double.TryParse(s, out double d))
+                        values[variable.Name] = d;
+                    else if (variable.Type.Equals("Boolean", StringComparison.OrdinalIgnoreCase) && bool.TryParse(s, out bool b))
+                        values[variable.Name] = b;
+                    else
+                        values[variable.Name] = s;
+                }
+                else if (ctrl is CheckBox chk)
+                {
+                    values[variable.Name] = chk.IsChecked == true;
+                }
+                else if (ctrl is TextBox txt)
+                {
+                    string s = txt.Text?.Trim() ?? "";
+                    if (variable.Type.Equals("Integer", StringComparison.OrdinalIgnoreCase) && int.TryParse(s, out int i))
+                        values[variable.Name] = i;
+                    else if (variable.Type.Equals("Double", StringComparison.OrdinalIgnoreCase) && double.TryParse(s, out double d))
+                        values[variable.Name] = d;
+                    else if (variable.Type.Equals("Boolean", StringComparison.OrdinalIgnoreCase) && bool.TryParse(s, out bool b))
+                        values[variable.Name] = b;
+                    else
+                        values[variable.Name] = s;
+                }
+                else
+                {
+                    values[variable.Name] = null;
+                }
+            }
+            return values;
+        }
+
+        /// <summary>
+        /// Shows or hides each variable row based on its VisibilityFormula, so hidden
+        /// mandatory variables do not block the user.
+        /// </summary>
+        private void EvaluateVisibility()
+        {
+            var values = BuildCurrentValues();
+            foreach (var variable in _variables)
+            {
+                if (!_rowMap.TryGetValue(variable.Name, out var row)) continue;
+
+                if (string.IsNullOrWhiteSpace(variable.VisibilityFormula))
+                {
+                    row.Visibility = Visibility.Visible;
+                }
+                else
+                {
+                    row.Visibility = ConfiguratorService.EvaluateActiveFormula(variable.VisibilityFormula, values)
+                        ? Visibility.Visible
+                        : Visibility.Collapsed;
+                }
             }
         }
 
@@ -143,7 +227,8 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                         strValue = txt.Text?.Trim() ?? "";
                     }
 
-                    if (variable.IsMandatory && string.IsNullOrEmpty(strValue))
+                    bool isVisible = !_rowMap.TryGetValue(variable.Name, out var row) || row.Visibility != Visibility.Collapsed;
+                    if (variable.IsMandatory && isVisible && string.IsNullOrEmpty(strValue))
                     {
                         MessageBox.Show($"参数 [{variable.DisplayName ?? variable.Name}] 是必填项，不能为空！", "验证失败", MessageBoxButton.OK, MessageBoxImage.Warning);
                         ctrl.Focus();

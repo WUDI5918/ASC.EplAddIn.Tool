@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using AutoSchematicConfigurator.EplAddIn.Tool;
 using Xunit;
 
@@ -104,6 +105,50 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool.Tests
         {
             var result = ConfiguratorService.FormatPageName("\tESS\n", "\rL1", "P1\t", " EBH", "USER ", "101");
             Assert.Equal("==ESS=L1+P1&EBH#USER/101", result);
+        }
+
+        // ==========================================
+        // P-4/t8: newly-added-page isolation for page-macro placeholder processing
+        // ==========================================
+
+        [Fact]
+        public void IsNewlyAddedPageName_WithNameInOldSet_ShouldReturnFalse()
+        {
+            var oldPages = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "==ESS=L1+P1/101", "=L2/202" };
+
+            Assert.False(ConfiguratorService.IsNewlyAddedPageName("==ESS=L1+P1/101", oldPages));
+        }
+
+        [Fact]
+        public void IsNewlyAddedPageName_WithNameNotInOldSet_ShouldReturnTrue()
+        {
+            var oldPages = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "=L2/202" };
+
+            Assert.True(ConfiguratorService.IsNewlyAddedPageName("==ESS=L1+P1/101", oldPages));
+        }
+
+        [Fact]
+        public void IsNewlyAddedPageName_WithNullOldSet_ShouldReturnTrue()
+        {
+            // No snapshot provided: treat the page as new (conservative for freshly inserted pages).
+            Assert.True(ConfiguratorService.IsNewlyAddedPageName("==ESS/101", null));
+        }
+
+        [Fact]
+        public void IsNewlyAddedPageName_WithNullOrEmptyName_ShouldReturnFalse()
+        {
+            var oldPages = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "=L2/202" };
+
+            Assert.False(ConfiguratorService.IsNewlyAddedPageName(null, oldPages));
+            Assert.False(ConfiguratorService.IsNewlyAddedPageName("", oldPages));
+        }
+
+        [Fact]
+        public void IsNewlyAddedPageName_WithCaseDifference_ShouldMatchCaseInsensitively()
+        {
+            var oldPages = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "==ess=L1/101" };
+
+            Assert.False(ConfiguratorService.IsNewlyAddedPageName("==ESS=L1/101", oldPages));
         }
     }
 }

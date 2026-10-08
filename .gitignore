@@ -1,7 +1,10 @@
-﻿.vs/
+.vs/
 bin/
 obj/
 debug_log.txt
 *.user
 *.suo
 .superpowers/
+.agent-teams/
+expert-panel/
+review_*.md

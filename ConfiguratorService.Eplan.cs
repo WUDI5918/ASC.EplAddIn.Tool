@@ -20,33 +20,47 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
         // ==================== PAGE CREATION HELPER ====================
         public static HashSet<string> ClearedPages { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// Decides whether a page found by name after a page-macro insertion is a page this run
+        /// actually created, i.e. its name was NOT present in the pre-insertion snapshot
+        /// (<paramref name="oldPageNames"/>). A page that already existed before the insertion
+        /// (incremental mode keeps old pages; a string-vs-canonical name mismatch can also hit an
+        /// old page) must not receive this element's placeholder mappings — that would silently
+        /// overwrite old content (t2-H3).
+        /// </summary>
+        /// <param name="pageName">The full page name of the located page.</param>
+        /// <param name="oldPageNames">Case-insensitive names of pages that existed before the
+        /// insertion; <c>null</c> means "no snapshot" and is treated as "new" (conservative for
+        /// freshly inserted pages).</param>
+        public static bool IsNewlyAddedPageName(string pageName, ICollection<string> oldPageNames)
+        {
+            if (string.IsNullOrEmpty(pageName)) return false;
+            if (oldPageNames == null) return true;
+            return !oldPageNames.Contains(pageName);
+        }
+
         private static Page GetOrCreatePage(Project project, List<MappingEntry> structures, Page fallbackPage, Dictionary<string, object> parameters, LibrarySettings settings)
         {
             if (structures == null || structures.Count == 0) return fallbackPage;
 
             try
             {
-                string functionalAssignment = (settings == null || settings.AvailableStructureIdentifiers == null || settings.AvailableStructureIdentifiers.Contains("==")) ? (structures.FirstOrDefault(s => s.Key == "==")?.Value ?? "") : "";
-                string functionDesignation = (settings == null || settings.AvailableStructureIdentifiers == null || settings.AvailableStructureIdentifiers.Contains("=")) ? (structures.FirstOrDefault(s => s.Key == "=")?.Value ?? "") : "";
-                string locationDesignation = (settings == null || settings.AvailableStructureIdentifiers == null || settings.AvailableStructureIdentifiers.Contains("+")) ? (structures.FirstOrDefault(s => s.Key == "+")?.Value ?? "") : "";
-                string documentType = (settings == null || settings.AvailableStructureIdentifiers == null || settings.AvailableStructureIdentifiers.Contains("&")) ? (structures.FirstOrDefault(s => s.Key == "&")?.Value ?? "") : "";
-                string userDefined = (settings == null || settings.AvailableStructureIdentifiers == null || settings.AvailableStructureIdentifiers.Contains("UserDefined") || settings.AvailableStructureIdentifiers.Contains("#")) ? (structures.FirstOrDefault(s => s.Key == "UserDefined" || s.Key == "#")?.Value ?? "") : "";
-                string pageName = (settings == null || settings.AvailableStructureIdentifiers == null || settings.AvailableStructureIdentifiers.Contains("PageName")) ? (structures.FirstOrDefault(s => s.Key == "PageName")?.Value ?? "") : "";
+                var structure = PageStructure.FromStructureMappings(structures, settings);
 
                 // Evaluate structure properties with formula engine
-                functionalAssignment = EvaluateValueFormula(functionalAssignment, parameters);
-                functionDesignation = EvaluateValueFormula(functionDesignation, parameters);
-                locationDesignation = EvaluateValueFormula(locationDesignation, parameters);
-                documentType = EvaluateValueFormula(documentType, parameters);
-                userDefined = EvaluateValueFormula(userDefined, parameters);
-                pageName = EvaluateValueFormula(pageName, parameters);
+                structure.FunctionalAssignment = EvaluateValueFormula(structure.FunctionalAssignment, parameters);
+                structure.FunctionDesignation = EvaluateValueFormula(structure.FunctionDesignation, parameters);
+                structure.LocationDesignation = EvaluateValueFormula(structure.LocationDesignation, parameters);
+                structure.DocumentType = EvaluateValueFormula(structure.DocumentType, parameters);
+                structure.UserDefined = EvaluateValueFormula(structure.UserDefined, parameters);
+                structure.PageName = EvaluateValueFormula(structure.PageName, parameters);
 
-                if (string.IsNullOrWhiteSpace(pageName))
+                if (string.IsNullOrWhiteSpace(structure.PageName))
                 {
                     return fallbackPage;
                 }
 
-                string fullPageName = FormatPageName(functionalAssignment, functionDesignation, locationDesignation, documentType, userDefined, pageName);
+                string fullPageName = structure.ToFullPageName();
 
                 // Find existing page
                 Page existingPage = null;
@@ -61,9 +75,19 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
 
                 if (existingPage != null)
                 {
+                    if (IncrementalGeneration)
+                    {
+                        // Incremental: reuse the existing page, do not delete it.
+                        return existingPage;
+                    }
+
                     if (!ClearedPages.Contains(fullPageName))
                     {
                         Log("Info", $"检测到已存在的页面 '{fullPageName}'，正在清理以重新生成...");
+                        if (!AbortOnFirstError)
+                        {
+                            Log("Warning", $"  跳过模式 (AbortOnFirstError=false)：页面 '{fullPageName}' 将被删除并在单个事务内提交，即使后续元素失败被跳过，该删除也不会回滚。");
+                        }
                         try
                         {
                             existingPage.Remove();
@@ -87,12 +111,12 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                 // Create page
                 Page page = new Page();
                 PagePropertyList pagePropList = new PagePropertyList();
-                if (!string.IsNullOrWhiteSpace(functionalAssignment)) pagePropList.DESIGNATION_FUNCTIONALASSIGNMENT = functionalAssignment.Trim();
-                if (!string.IsNullOrWhiteSpace(functionDesignation)) pagePropList.DESIGNATION_PLANT = functionDesignation.Trim();
-                if (!string.IsNullOrWhiteSpace(locationDesignation)) pagePropList.DESIGNATION_LOCATION = locationDesignation.Trim();
-                if (!string.IsNullOrWhiteSpace(documentType)) pagePropList.DESIGNATION_DOCTYPE = documentType.Trim();
-                if (!string.IsNullOrWhiteSpace(userDefined)) pagePropList.DESIGNATION_USERDEFINED = userDefined.Trim();
-                if (!string.IsNullOrWhiteSpace(pageName)) pagePropList.PAGE_COUNTER = pageName.Trim();
+                if (!string.IsNullOrWhiteSpace(structure.FunctionalAssignment)) pagePropList.DESIGNATION_FUNCTIONALASSIGNMENT = structure.FunctionalAssignment.Trim();
+                if (!string.IsNullOrWhiteSpace(structure.FunctionDesignation)) pagePropList.DESIGNATION_PLANT = structure.FunctionDesignation.Trim();
+                if (!string.IsNullOrWhiteSpace(structure.LocationDesignation)) pagePropList.DESIGNATION_LOCATION = structure.LocationDesignation.Trim();
+                if (!string.IsNullOrWhiteSpace(structure.DocumentType)) pagePropList.DESIGNATION_DOCTYPE = structure.DocumentType.Trim();
+                if (!string.IsNullOrWhiteSpace(structure.UserDefined)) pagePropList.DESIGNATION_USERDEFINED = structure.UserDefined.Trim();
+                if (!string.IsNullOrWhiteSpace(structure.PageName)) pagePropList.PAGE_COUNTER = structure.PageName.Trim();
 
                 page.Create(project, DocumentTypeManager.DocumentType.Circuit, pagePropList);
                 return page;

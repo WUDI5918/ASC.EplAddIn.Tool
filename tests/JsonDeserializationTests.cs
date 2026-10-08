@@ -48,13 +48,11 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool.Tests
         {
             string json = @"{
                 ""Settings"": {
-                    ""Unit"": ""Imperial"",
-                    ""UseSubSegmentLogic"": true
+                    ""Unit"": ""Imperial""
                 }
             }";
             var data = JsonConvert.DeserializeObject<ConfiguratorData>(json);
             Assert.Equal("Imperial", data.Settings.Unit);
-            Assert.True(data.Settings.UseSubSegmentLogic);
         }
 
         [Fact]

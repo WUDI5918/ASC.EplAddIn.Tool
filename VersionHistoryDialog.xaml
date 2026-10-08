@@ -4,7 +4,7 @@
         xmlns:ui="http://schemas.modernwpf.com/2019"
         Title="版本历史 (Version History)" Height="520" Width="720"
         WindowStartupLocation="CenterOwner" ResizeMode="CanResizeWithGrip"
-        Background="{StaticResource WorkspaceBg}"
+        Background="{DynamicResource WorkspaceBg}"
         Foreground="White"
         ui:WindowHelper.UseModernWindowStyle="True"
         ui:ThemeManager.RequestedTheme="Dark"

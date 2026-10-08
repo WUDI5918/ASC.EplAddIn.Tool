@@ -16,10 +16,22 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
         public LibrarySettingsDialog(LibrarySettings settings, ConfiguratorData currentDb = null, Action<ConfiguratorData> onVersionRestored = null)
         {
             InitializeComponent();
-            Settings = settings ?? new LibrarySettings();
+            // Work on a deep copy so cancelling the dialog leaves the original
+            // ConfiguratorData.Settings untouched.
+            Settings = CloneSettings(settings ?? new LibrarySettings());
             _currentDb = currentDb;
             _onVersionRestored = onVersionRestored;
             LoadSettings();
+        }
+
+        private static LibrarySettings CloneSettings(LibrarySettings source)
+        {
+            return new LibrarySettings
+            {
+                Unit = source.Unit,
+                SelectedLanguages = new List<string>(source.SelectedLanguages ?? new List<string>()),
+                AvailableStructureIdentifiers = new List<string>(source.AvailableStructureIdentifiers ?? new List<string>())
+            };
         }
 
         private void LoadSettings()
@@ -33,9 +45,6 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
             {
                 CboUnit.SelectedIndex = 0;
             }
-
-            // Load Sub-segment logic
-            ChkSubSegment.IsChecked = Settings.UseSubSegmentLogic;
 
             // Load Languages
             var selectedLangs = Settings.SelectedLanguages ?? new List<string>();
@@ -74,9 +83,6 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
             // Save Unit
             var selectedItem = CboUnit.SelectedItem as ComboBoxItem;
             Settings.Unit = selectedItem?.Tag?.ToString() ?? "Metric";
-
-            // Save Sub-segment logic
-            Settings.UseSubSegmentLogic = ChkSubSegment.IsChecked == true;
 
             // Save Languages
             var selectedLangs = new List<string>();

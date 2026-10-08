@@ -52,12 +52,23 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
         {
             var dir = GetVersionsDirectory();
             if (!Directory.Exists(dir)) return new List<LibraryVersionInfo>();
-            
-            return Directory.GetFiles(dir, "*.json")
-                .Select(f => JsonConvert.DeserializeObject<LibraryVersionInfo>(File.ReadAllText(f)))
-                .Where(v => v != null)
-                .OrderByDescending(v => v.Timestamp)
-                .ToList();
+
+            var versions = new List<LibraryVersionInfo>();
+            foreach (var file in Directory.GetFiles(dir, "*.json"))
+            {
+                try
+                {
+                    var version = JsonConvert.DeserializeObject<LibraryVersionInfo>(File.ReadAllText(file));
+                    if (version != null) versions.Add(version);
+                }
+                catch (Exception ex)
+                {
+                    // Skip corrupt/unreadable version files instead of failing the whole listing.
+                    // Logged so silent data corruption does not go unnoticed.
+                    ConfiguratorService.LogDebug($"跳过损坏或不可读的版本文件 '{file}': {ex.Message}");
+                }
+            }
+            return versions.OrderByDescending(v => v.Timestamp).ToList();
         }
 
         public static ConfiguratorData RestoreVersion(string versionId)

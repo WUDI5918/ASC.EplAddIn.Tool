@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Linq;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Threading;
 
 namespace AutoSchematicConfigurator.EplAddIn.Tool
@@ -12,6 +14,9 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
     public partial class GenerationLogWindow : Window
     {
         private ObservableCollection<LogEntry> _allLogs = new ObservableCollection<LogEntry>();
+        private ICollectionView _logView;
+        private string _appliedSearch = null;
+        private string _appliedLevel = null;
         private Action _generationAction;
         private bool _isCompleted = false;
         private long _lastDoEventsTime = 0;
@@ -22,7 +27,12 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
             this.Owner = owner;
             _generationAction = generationAction;
 
-            LstLogs.ItemsSource = _allLogs;
+            // Bind through an ICollectionView so filtering happens in the data layer and stays
+            // consistent with ListBox UI virtualization (no per-container Visibility hacks).
+            // The default view of an ObservableCollection auto-applies the current Filter to
+            // newly added entries, so logs arriving during generation are filtered correctly.
+            _logView = CollectionViewSource.GetDefaultView(_allLogs);
+            LstLogs.ItemsSource = _logView;
 
             // Subscribe to static service log events
             ConfiguratorService.OnLogAdded += ConfiguratorService_OnLogAdded;
@@ -70,7 +80,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
         private void ExecuteGeneration()
         {
             _allLogs.Clear();
-            ConfiguratorService.GenerationLogs.Clear();
+            ConfiguratorService.ClearGenerationLogs();
             GenProgressBar.IsIndeterminate = true;
             TxtSummaryStatus.Text = "正在生成原理图，请稍候...";
 
@@ -109,35 +119,44 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
 
         private void ApplyFilter()
         {
-            if (LstLogs == null || TxtSearchLog == null || CboLogLevelFilter == null) return;
+            if (_logView == null || LstLogs == null || TxtSearchLog == null || CboLogLevelFilter == null) return;
 
             string search = TxtSearchLog.Text?.Trim();
             string selectedLevel = (CboLogLevelFilter.SelectedItem as ComboBoxItem)?.Content?.ToString();
 
-            // Setup visibility mapping
-            foreach (var item in LstLogs.Items)
+            // Cheap no-op when the criteria are unchanged: the default view already applies the
+            // current Filter to entries added during generation, so a full Refresh is not needed
+            // per log entry.
+            if (string.Equals(search, _appliedSearch, StringComparison.Ordinal) &&
+                string.Equals(selectedLevel, _appliedLevel, StringComparison.Ordinal))
             {
-                var entry = item as LogEntry;
-                if (entry == null) continue;
+                return;
+            }
+            _appliedSearch = search;
+            _appliedLevel = selectedLevel;
+
+            // Data-layer filter: ListBox virtualization is unaffected, and every realized or
+            // newly-realized container reflects the filtered view.
+            _logView.Filter = entry =>
+            {
+                if (!(entry is LogEntry log)) return false;
 
                 bool matchesSearch = string.IsNullOrEmpty(search) ||
-                                     entry.Message.IndexOf(search, StringComparison.OrdinalIgnoreCase) >= 0;
+                                     log.Message.IndexOf(search, StringComparison.OrdinalIgnoreCase) >= 0;
 
                 bool matchesLevel = true;
                 if (selectedLevel != null && selectedLevel != "全部日志级别")
                 {
-                    if (selectedLevel.Contains("信息") && entry.Level != "Info") matchesLevel = false;
-                    else if (selectedLevel.Contains("成功") && entry.Level != "Success") matchesLevel = false;
-                    else if (selectedLevel.Contains("警告") && entry.Level != "Warning") matchesLevel = false;
-                    else if (selectedLevel.Contains("错误") && entry.Level != "Error") matchesLevel = false;
+                    if (selectedLevel.Contains("信息") && log.Level != "Info") matchesLevel = false;
+                    else if (selectedLevel.Contains("成功") && log.Level != "Success") matchesLevel = false;
+                    else if (selectedLevel.Contains("警告") && log.Level != "Warning") matchesLevel = false;
+                    else if (selectedLevel.Contains("错误") && log.Level != "Error") matchesLevel = false;
                 }
 
-                ListBoxItem container = LstLogs.ItemContainerGenerator.ContainerFromItem(item) as ListBoxItem;
-                if (container != null)
-                {
-                    container.Visibility = (matchesSearch && matchesLevel) ? Visibility.Visible : Visibility.Collapsed;
-                }
-            }
+                return matchesSearch && matchesLevel;
+            };
+
+            _logView.Refresh();
         }
 
         private void TxtSearchLog_TextChanged(object sender, TextChangedEventArgs e)
@@ -155,7 +174,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
             try
             {
                 var sb = new StringBuilder();
-                foreach (var log in ConfiguratorService.GenerationLogs)
+                foreach (var log in ConfiguratorService.SnapshotGenerationLogs())
                 {
                     sb.AppendLine($"[{log.Timestamp:yyyy-MM-dd HH:mm:ss}] [{log.Level}] {log.Message}");
                 }

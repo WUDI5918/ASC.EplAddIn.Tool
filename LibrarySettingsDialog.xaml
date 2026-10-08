@@ -4,7 +4,7 @@
         xmlns:ui="http://schemas.modernwpf.com/2019"
         Title="生成器设置 (Builder Settings)" Height="450" Width="420"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
-        Background="{StaticResource WorkspaceBg}"
+        Background="{DynamicResource WorkspaceBg}"
         Foreground="White"
         ui:WindowHelper.UseModernWindowStyle="True"
         ui:ThemeManager.RequestedTheme="Dark"
@@ -36,10 +36,6 @@
                     <ComboBoxItem Content="Metric (公制 - mm)" Tag="Metric"/>
                     <ComboBoxItem Content="Imperial (英制 - inch)" Tag="Imperial"/>
                 </ComboBox>
-
-                <!-- Sub-segment Logic Settings -->
-                <TextBlock Text="逻辑选项" FontWeight="SemiBold" Foreground="{StaticResource TextMuted}" Margin="0,0,0,5"/>
-                <CheckBox x:Name="ChkSubSegment" Content="启用 NFPA 子段划分逻辑 (Sub-segment Logic)" Margin="0,0,0,15" Foreground="White"/>
 
                 <!-- Multilingual Settings -->
                 <TextBlock Text="表单翻译语言 (Selected Languages)" FontWeight="SemiBold" Foreground="{StaticResource TextMuted}" Margin="0,0,0,5"/>

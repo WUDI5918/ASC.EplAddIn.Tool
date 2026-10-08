@@ -128,7 +128,8 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
             var element = btn.DataContext as MacroElement;
             if (element == null) return;
 
-            if (string.IsNullOrEmpty(element.MacroPath) || !System.IO.File.Exists(element.MacroPath))
+            string resolvedPath = ConfiguratorService.ResolveMacroPath(element.MacroPath);
+            if (string.IsNullOrEmpty(element.MacroPath) || !System.IO.File.Exists(resolvedPath))
             {
                 MessageBox.Show($"未找到宏文件，无法预览: {element.MacroPath}", "预览失败", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
@@ -137,7 +138,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
             try
             {
                 var ctx = new Eplan.EplApi.ApplicationFramework.ActionCallingContext();
-                ctx.AddParameter("filename", element.MacroPath);
+                ctx.AddParameter("filename", resolvedPath);
                 ctx.AddParameter("variant", element.VariantIndex.ToString());
                 new Eplan.EplApi.ApplicationFramework.CommandLineInterpreter().Execute("XMacMInsertMacro", ctx);
             }

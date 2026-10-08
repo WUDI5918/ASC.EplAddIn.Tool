@@ -83,6 +83,18 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                     }
                 }
 
+                // Sheet 4: Settings (single JSON cell so the round-trip is lossless)
+                var ws4 = package.Workbook.Worksheets.Add("Settings");
+                ws4.Cells[1, 1].Value = "Settings (JSON)";
+                ws4.Cells[1, 1].Style.Font.Bold = true;
+                ws4.Cells[2, 1].Value = db.Settings == null ? "" : JsonConvert.SerializeObject(db.Settings);
+
+                // Sheet 5: Scripts (single JSON cell so the round-trip is lossless)
+                var ws5 = package.Workbook.Worksheets.Add("Scripts");
+                ws5.Cells[1, 1].Value = "Scripts (JSON)";
+                ws5.Cells[1, 1].Style.Font.Bold = true;
+                ws5.Cells[2, 1].Value = db.Scripts == null ? "" : JsonConvert.SerializeObject(db.Scripts);
+
                 // Auto-fit columns for all sheets
                 foreach (var ws in package.Workbook.Worksheets)
                 {
@@ -175,8 +187,31 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                         db.Configurators.Add(cfg);
                     }
                 }
+
+                // Sheet 4: Settings
+                var ws4 = package.Workbook.Worksheets.FirstOrDefault(w => w.Name == "Settings");
+                if (ws4 != null)
+                {
+                    string settingsJson = ws4.Cells[2, 1].Text;
+                    if (!string.IsNullOrEmpty(settingsJson))
+                    {
+                        db.Settings = JsonConvert.DeserializeObject<LibrarySettings>(settingsJson) ?? new LibrarySettings();
+                    }
+                }
+
+                // Sheet 5: Scripts
+                var ws5 = package.Workbook.Worksheets.FirstOrDefault(w => w.Name == "Scripts");
+                if (ws5 != null)
+                {
+                    string scriptsJson = ws5.Cells[2, 1].Text;
+                    if (!string.IsNullOrEmpty(scriptsJson))
+                    {
+                        db.Scripts = JsonConvert.DeserializeObject<List<ScriptTypical>>(scriptsJson) ?? new List<ScriptTypical>();
+                    }
+                }
             }
 
+            db.Normalize();
             return db;
         }
 
@@ -201,7 +236,9 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
             if (!File.Exists(filePath)) throw new FileNotFoundException("JSON file not found.", filePath);
 
             string json = File.ReadAllText(filePath);
-            return JsonConvert.DeserializeObject<ConfiguratorData>(json);
+            var db = JsonConvert.DeserializeObject<ConfiguratorData>(json);
+            db?.Normalize();
+            return db;
         }
     }
 }

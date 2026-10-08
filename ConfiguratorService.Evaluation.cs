@@ -1,144 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Text;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Media;
-using Eplan.EplApi.Base;
-using Eplan.EplApi.DataModel;
-using Page = Eplan.EplApi.DataModel.Page;
-using Eplan.EplApi.DataModel.Graphics;
-using Eplan.EplApi.HEServices;
 
 namespace AutoSchematicConfigurator.EplAddIn.Tool
 {
     public partial class ConfiguratorService
     {
-        // ==================== VALUE / FORMULA EVALUATION (Jint) ====================
+        // ==================== VALUE / FORMULA EVALUATION (NCalc via RuleEngine) ====================
 
-        /// <summary>
-        /// Preprocess NCalc-style logical operators (and/or/not) to JavaScript equivalents (&&/||/!).
-        /// String literals (single- or double-quoted) are copied verbatim so words inside
-        /// text values are never rewritten.
-        /// </summary>
-        internal static string PreprocessNCalcSyntax(string expression)
-        {
-            if (string.IsNullOrEmpty(expression)) return expression;
-
-            var sb = new StringBuilder(expression.Length);
-            char quote = '\0';
-            int i = 0;
-
-            while (i < expression.Length)
-            {
-                char c = expression[i];
-
-                // Inside a string literal: copy verbatim, honoring backslash escapes.
-                if (quote != '\0')
-                {
-                    sb.Append(c);
-                    if (c == '\\' && i + 1 < expression.Length)
-                    {
-                        sb.Append(expression[i + 1]);
-                        i += 2;
-                        continue;
-                    }
-                    if (c == quote) quote = '\0';
-                    i++;
-                    continue;
-                }
-
-                if (c == '\'' || c == '"')
-                {
-                    quote = c;
-                    sb.Append(c);
-                    i++;
-                    continue;
-                }
-
-                if (char.IsLetter(c))
-                {
-                    int start = i;
-                    while (i < expression.Length && IsWordChar(expression[i])) i++;
-
-                    string word = expression.Substring(start, i - start);
-                    bool boundaryBefore = start == 0 || !IsWordChar(expression[start - 1]);
-                    bool boundaryAfter = i >= expression.Length || !IsWordChar(expression[i]);
-
-                    if (boundaryBefore && boundaryAfter)
-                    {
-                        if (word.Equals("and", StringComparison.OrdinalIgnoreCase)) word = "&&";
-                        else if (word.Equals("or", StringComparison.OrdinalIgnoreCase)) word = "||";
-                        else if (word.Equals("not", StringComparison.OrdinalIgnoreCase)) word = "!";
-                    }
-
-                    sb.Append(word);
-                    continue;
-                }
-
-                sb.Append(c);
-                i++;
-            }
-
-            return sb.ToString();
-        }
-
-        private static bool IsWordChar(char c)
-        {
-            return char.IsLetterOrDigit(c) || c == '_';
-        }
-
-        private static void RegisterMathFunctions(Jint.Engine engine)
-        {
-            engine.SetValue("Round", new Func<double, double>(Math.Round));
-            engine.SetValue("Abs", new Func<double, double>(Math.Abs));
-            engine.SetValue("Max", new Func<double, double, double>(Math.Max));
-            engine.SetValue("Min", new Func<double, double, double>(Math.Min));
-            engine.SetValue("Pow", new Func<double, double, double>(Math.Pow));
-            engine.SetValue("Sqrt", new Func<double, double>(Math.Sqrt));
-            engine.SetValue("Log", new Func<double, double>(Math.Log));
-            engine.SetValue("Sin", new Func<double, double>(Math.Sin));
-            engine.SetValue("Cos", new Func<double, double>(Math.Cos));
-            engine.SetValue("Tan", new Func<double, double>(Math.Tan));
-        }
-
-        private static Jint.Engine CreateEngine(Dictionary<string, object> parameters)
-        {
-            var engine = new Jint.Engine();
-            // Register custom engineering functions
-            engine.SetValue("Lookup_Breaker", new Func<double, string, string>((power, startType) => QueryBreakerCatalog(power, startType ?? "")));
-            engine.SetValue("Lookup", new Func<string, string, string, string, string>((tableName, returnCol, searchCol, searchVal) => QueryGenericCatalog(tableName ?? "", returnCol ?? "", searchCol ?? "", searchVal ?? "")));
-            // Concat: defined as JS function to support variable arguments (2+)
-            engine.Execute(@"
-                function Concat() {
-                    var result = '';
-                    for (var i = 0; i < arguments.length; i++) {
-                        var a = arguments[i];
-                        result += (a === null || a === undefined) ? '' : String(a);
-                    }
-                    return result;
-                }
-            ");
-            engine.SetValue("IsAvailable", new Func<string, bool>((varName) => parameters != null && parameters.ContainsKey(varName) && parameters[varName] != null));
-            engine.SetValue("IsNullEmpty", new Func<string, bool>((val) => string.IsNullOrEmpty(val)));
-
-            // Backwards compatibility functions
-            engine.SetValue("Contains", new Func<string, string, bool>((str, sub) => (str ?? "").IndexOf(sub ?? "", StringComparison.OrdinalIgnoreCase) >= 0));
-            engine.SetValue("StartsWith", new Func<string, string, bool>((str, sub) => (str ?? "").StartsWith(sub ?? "", StringComparison.OrdinalIgnoreCase)));
-            engine.SetValue("EndsWith", new Func<string, string, bool>((str, sub) => (str ?? "").EndsWith(sub ?? "", StringComparison.OrdinalIgnoreCase)));
-            engine.SetValue("Upper", new Func<string, string>((str) => (str ?? "").ToUpper()));
-            engine.SetValue("Lower", new Func<string, string>((str) => (str ?? "").ToLower()));
-
-            // Since 'If' is a reserved keyword in JS, we provide a capitalized 'If' wrapper
-            engine.SetValue("If", new Func<bool, object, object, object>((cond, t, f) => cond ? t : f));
-
-            // Register NCalc-compatible math functions
-            RegisterMathFunctions(engine);
-
-            return engine;
-        }
+        // The host-side context injects EPLAN-provided values (project/user/date) and catalog file
+        // access into the EPLAN-independent RuleEngine.
+        private static readonly IRuleEngineContext _ruleEngineContext = new RuleEngineContextImpl();
 
         public static object EvaluateExpression(string expressionStr, Dictionary<string, object> parameters)
         {
@@ -146,35 +18,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
 
             try
             {
-                string clean = expressionStr.Trim();
-                if (clean.StartsWith("=")) clean = clean.Substring(1).Trim();
-
-                // Preprocess NCalc-style syntax (and/or/not) to JS equivalents
-                clean = PreprocessNCalcSyntax(clean);
-
-                // Create a fresh engine instance per call to avoid cross-call variable leakage
-                var engine = CreateEngine(parameters);
-
-                // Inject dynamic EPLAN system variables
-                string projectName = !string.IsNullOrEmpty(CachedProjectName) ? CachedProjectName : "AutoConfig_Project";
-                engine.SetValue("ProjectName", projectName);
-                engine.SetValue("Date", DateTime.Now.ToString("yyyy-MM-dd"));
-                engine.SetValue("User", Environment.UserName);
-
-                // Bind parameters
-                foreach (var kvp in parameters)
-                {
-                    engine.SetValue(kvp.Key, kvp.Value);
-                }
-
-                try
-                {
-                    var result = engine.Evaluate(clean);
-                    return result.ToObject();
-                }
-                finally
-                {
-                }
+                return RuleEngine.Evaluate(expressionStr, parameters, _ruleEngineContext);
             }
             catch (Exception ex)
             {
@@ -187,7 +31,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
             if (string.IsNullOrWhiteSpace(formula)) return true;
             try
             {
-                object result = EvaluateExpression(formula, parameters);
+                object result = RuleEngine.Evaluate(formula, parameters, _ruleEngineContext);
                 if (result is bool b) return b;
                 if (result != null && bool.TryParse(result.ToString(), out bool parsedBool))
                 {
@@ -205,10 +49,10 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
         private static string EvaluateValueFormula(string formula, Dictionary<string, object> parameters)
         {
             if (string.IsNullOrWhiteSpace(formula)) return "";
-            if (!formula.StartsWith("=")) return formula; // Static value
+            if (!formula.Trim().StartsWith("=")) return formula; // Static value
             try
             {
-                object result = EvaluateExpression(formula, parameters);
+                object result = RuleEngine.Evaluate(formula, parameters, _ruleEngineContext);
                 return result?.ToString() ?? "";
             }
             catch (Exception ex)
@@ -218,7 +62,7 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
             }
         }
 
-        // ==================== CSV CATALOG LOOKUP ====================
+        // ==================== CATALOG LOADING (host side) ====================
 
         private static readonly Dictionary<string, (string[] Lines, DateTime Timestamp)> _genericCatalogCache = new Dictionary<string, (string[], DateTime)>(StringComparer.OrdinalIgnoreCase);
 
@@ -238,7 +82,12 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                // asmDir probing failed (e.g. restricted permissions / unreadable assembly path);
+                // fall back to the user-writable AppData directory below.
+                LogDebug($"探测程序集目录数据文件失败，回退到 AppData: {ex.Message}");
+            }
             // Fallback to user-writable AppData directory
             string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
             string dataDir = Path.Combine(appData, "ASC.EplAddIn.Tool");
@@ -258,9 +107,23 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
                 {
                     if (File.Exists(catalogPath))
                     {
-                        var lines = File.ReadAllLines(catalogPath);
-                        _genericCatalogCache[catalogPath] = (lines, lastWrite);
-                        return lines;
+                        try
+                        {
+                            var lines = File.ReadAllLines(catalogPath);
+                            _genericCatalogCache[catalogPath] = (lines, lastWrite);
+                            return lines;
+                        }
+                        catch (Exception ex)
+                        {
+                            // Read failure (locked/inaccessible/corrupt file): log it and return an
+                            // empty array so callers keep their documented empty-result semantics.
+                            // The cache entry is stamped DateTime.MinValue so a transient failure is
+                            // retried on the next lookup (matches the pre-catch propagation behavior,
+                            // where RuleEngine.QueryCatalog swallowed the exception and returned "").
+                            LogDebug($"读取目录文件失败 '{catalogPath}': {ex.Message}");
+                            _genericCatalogCache[catalogPath] = (new string[0], DateTime.MinValue);
+                            return new string[0];
+                        }
                     }
                     else
                     {
@@ -272,94 +135,35 @@ namespace AutoSchematicConfigurator.EplAddIn.Tool
             }
         }
 
-        private static string QueryGenericCatalog(string tableName, string returnColumn, string searchColumn, string searchValue)
+        /// <summary>
+        /// Host-side <see cref="IRuleEngineContext"/> that resolves catalog files and system variables
+        /// from the EPLAN add-in's data directories and static project state.
+        /// </summary>
+        private sealed class RuleEngineContextImpl : IRuleEngineContext, ICatalogSource
         {
-            try
+            public string ProjectName => !string.IsNullOrEmpty(CachedProjectName) ? CachedProjectName : "AutoConfig_Project";
+
+            public string User => Environment.UserName;
+
+            public string Date => DateTime.Now.ToString("yyyy-MM-dd");
+
+            public ICatalogSource CatalogSource => this;
+
+            public string[] LoadLines(string fileName)
             {
-                string fileName = tableName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) ? tableName : tableName + ".csv";
+                if (string.Equals(fileName, "breaker_catalog.csv", StringComparison.OrdinalIgnoreCase))
+                {
+                    string path = GetCatalogPath();
+                    if (string.IsNullOrEmpty(path) || !File.Exists(path)) return null;
+                    return LoadCatalogCached(path);
+                }
+
                 string dbDir = GetDatabaseDirectory();
-                if (string.IsNullOrEmpty(dbDir)) return "";
+                if (string.IsNullOrEmpty(dbDir)) return null;
                 string catalogPath = Path.Combine(dbDir, fileName);
-                
-                if (!File.Exists(catalogPath)) return "";
-
-                string[] lines = LoadGenericCatalogCached(catalogPath);
-                if (lines.Length == 0) return "";
-
-                string headerLine = lines[0];
-                string[] headers = headerLine.Split(',');
-
-                int returnColIdx = Array.FindIndex(headers, h => h.Trim().Equals(returnColumn, StringComparison.OrdinalIgnoreCase));
-                int searchColIdx = Array.FindIndex(headers, h => h.Trim().Equals(searchColumn, StringComparison.OrdinalIgnoreCase));
-
-                if (returnColIdx < 0 || searchColIdx < 0) return "";
-
-                for (int i = 1; i < lines.Length; i++)
-                {
-                    string line = lines[i];
-                    if (string.IsNullOrWhiteSpace(line)) continue;
-                    string[] cols = line.Split(',');
-
-                    if (cols.Length > Math.Max(returnColIdx, searchColIdx))
-                    {
-                        if (cols[searchColIdx].Trim().Equals(searchValue, StringComparison.OrdinalIgnoreCase))
-                        {
-                            return cols[returnColIdx].Trim();
-                        }
-                    }
-                }
+                if (!File.Exists(catalogPath)) return null;
+                return LoadGenericCatalogCached(catalogPath);
             }
-            catch
-            {
-                // Fallback
-            }
-            return "";
         }
-
-        private static string QueryBreakerCatalog(double power, string startType)
-        {
-            try
-            {
-                string catalogPath = GetCatalogPath();
-                if (!File.Exists(catalogPath))
-                {
-                    return "Default_Set";
-                }
-
-                string[] lines = LoadCatalogCached(catalogPath);
-                // Header: Power_kW,StartType,ValueSet
-                for (int i = 1; i < lines.Length; i++)
-                {
-                    string line = lines[i];
-                    if (string.IsNullOrWhiteSpace(line)) continue;
-
-                    string[] cols = line.Split(',');
-                    if (cols.Length >= 3)
-                    {
-                        double pVal;
-                        if (double.TryParse(cols[0].Trim(), out pVal))
-                        {
-                            string sType = cols[1].Trim();
-                            string valueSet = cols[2].Trim();
-
-                            if (sType.Equals(startType, StringComparison.OrdinalIgnoreCase))
-                            {
-                                if (Math.Abs(pVal - power) < 0.01 || pVal >= power)
-                                {
-                                    return valueSet;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            catch
-            {
-                // Fallback on error
-            }
-            return "Default_Set";
-        }
-
-
     }
 }
